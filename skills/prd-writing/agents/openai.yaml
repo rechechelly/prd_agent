@@ -1,0 +1,3 @@
+interface:
+  display_name: "PRD 撰写"
+  short_description: "根据产品需求交付可编辑 PRD 和配套可交互 HTML"

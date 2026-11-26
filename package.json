@@ -1,0 +1,30 @@
+{
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
+    "@tiptap/core": "^3.35.0",
+    "@tiptap/extension-image": "^3.35.0",
+    "@tiptap/extension-table": "^3.35.0",
+    "@tiptap/markdown": "^3.35.0",
+    "@tiptap/starter-kit": "^3.35.0",
+    "diff": "^5.2.2",
+    "dompurify": "^3.4.18",
+    "esbuild": "^0.28.2",
+    "html2canvas": "^1.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@tiptap/pm": "3.35.0",
+    "@tiptap/extension-list": "3.35.0"
+  },
+  "name": "xuye-pm-workbench",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node server/index.mjs",
+    "test": "node --test server/tests/*.test.mjs"
+  },
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

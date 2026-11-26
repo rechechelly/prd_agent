@@ -1,0 +1,21 @@
+{
+  "name": "xuye-workbench-server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/chord": "^1.6.0",
+    "@earendil-works/pi-ai": "^1.6.0",
+    "@earendil-works/pi-durable": "^1.6.0",
+    "@earendil-works/pi-schema": "^1.6.0",
+    "pdfjs-dist": "^6.5.438",
+    "playwright-core": "^1.65.1",
+    "word-extractor": "^1.0.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "yaml": "2.9.1"
+  },
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

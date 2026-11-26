@@ -1,0 +1,34 @@
+#!/bin/sh
+# Pi starts this launcher with -c. Enter a task-local OS sandbox, then exec Bash.
+set -eu
+work=$(pwd -P)
+case "$(/usr/bin/uname -s)" in
+  Darwin)
+    exec /usr/bin/sandbox-exec -D PROXY="localhost:$TASK_PROXY_PORT" -D WORK="$work" -D INPUTS="${work%/*}/inputs" -p '
+      (version 1)
+      (deny default)
+      (import "dyld-support.sb")
+      (allow process-fork process-exec)
+      (allow signal (target self))
+      (allow sysctl-read)
+      (allow network-outbound (remote tcp (param "PROXY")))
+      (allow file-read-metadata)
+      (allow file-read* file-map-executable (subpath (param "WORK")) (subpath (param "INPUTS"))
+        (subpath "/bin") (subpath "/usr/bin") (subpath "/usr/lib") (subpath "/usr/share")
+        (subpath "/System/Library") (subpath "/Library/Developer") (subpath "/Library/Frameworks/Python.framework") (subpath "/private/etc/ssl")
+        (subpath "/Applications/Xcode.app/Contents/Developer")
+        (subpath "/opt/homebrew/Cellar") (subpath "/usr/local/Cellar")
+        (subpath "/usr/local/bin") (literal "/dev/null") (literal "/dev/urandom")
+        (literal "/dev/random") (literal "/dev/zero") (literal "/private/etc/localtime"))
+      (allow file-write* (subpath (param "WORK")) (literal "/dev/null"))
+    ' /bin/bash "$@"
+    ;;
+  Linux)
+    if [ ! -x /usr/bin/bwrap ]; then echo 'Bash requires bubblewrap (bwrap) on this server' >&2; exit 126; fi
+    exec /usr/bin/bwrap --unshare-all --die-with-parent --new-session --ro-bind /usr /usr \
+      --ro-bind /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
+      --dev /dev --proc /proc --bind "$work" "$work" \
+      --ro-bind "${work%/*}/inputs" "${work%/*}/inputs" --ro-bind-try /etc/ssl /etc/ssl --chdir "$work" /usr/bin/python3 -I "${work%/*}/inputs/network.py" "${work%/*}/inputs/network.sock" "$@"
+    ;;
+  *) echo 'Unsupported Bash sandbox platform' >&2; exit 126 ;;
+esac

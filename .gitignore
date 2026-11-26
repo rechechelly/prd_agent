@@ -1,0 +1,13 @@
+node_modules/
+.private/
+.env
+.env.*
+.DS_Store
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.key
+*.pem
+/叙页产品需求工作台.html
+/示例交付/
+/docs/

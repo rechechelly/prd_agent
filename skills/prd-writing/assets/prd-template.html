@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>页面名需求文档 (PRD)</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f6f8;
+    color: #1f2329;
+    font: 15px/1.75 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif;
+  }
+  .doc { max-width: 920px; margin: 0 auto; padding: 48px 28px 80px; }
+  h1 { font-size: 28px; line-height: 1.35; margin: 0 0 8px; letter-spacing: -.02em; }
+  .meta { color: #646a73; margin: 0 0 28px; }
+  .meta b { color: #1f2329; font-weight: 650; }
+  h2 { font-size: 20px; margin: 36px 0 12px; padding-top: 8px; }
+  h3 { font-size: 16px; margin: 28px 0 8px; }
+  h4 { font-size: 15px; margin: 22px 0 8px; }
+  p { margin: 8px 0 12px; }
+  a { color: #1456f0; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ol, ul { margin: 8px 0 14px; padding-left: 1.4em; }
+  li { margin: 4px 0; }
+  strong { font-weight: 650; }
+  .toc { background: #fff; border: 1px solid #e5e6eb; border-radius: 10px; padding: 14px 18px 10px; }
+  .toc ol { margin: 6px 0 4px; }
+  .toc ol ol { margin: 2px 0 6px; }
+  figure { margin: 14px 0 8px; }
+  figure img { width: 100%; height: auto; display: block; background: #f4f7fb; border: 1px solid #e5e6eb; border-radius: 10px; }
+  figcaption { color: #8f959e; font-size: 13px; text-align: center; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; margin: 12px 0 16px; font-size: 14px; }
+  th, td { border: 1px solid #e5e6eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 650; }
+  .anno { color: #d83931; margin: 10px 0 14px; }
+  .foot { color: #8f959e; font-size: 13px; margin-top: 36px; }
+</style>
+</head>
+<body>
+<main class="doc">
+  <h1>页面名需求文档 (PRD)</h1>
+  <p class="meta">
+    <b>版本:</b> 1.0<br>
+    <b>日期:</b> {{文档日期}}<br>
+    <b>负责人:</b> 产品经理<br>
+    <b>原型:</b> <a href="../页面名.html">页面名</a>
+  </p>
+
+  <nav class="toc" aria-label="目录">
+    <strong>目录</strong>
+    <ol>
+      <li><a href="#overview">项目概述</a></li>
+      <li><a href="#flow">整体流程</a></li>
+      <li><a href="#pages">页面说明</a>
+        <ol>
+          <li><a href="#list">页面主区域</a></li>
+        </ol>
+      </li>
+      <li><a href="#states">状态与异常</a></li>
+      <li><a href="#scope">原型边界</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="overview">1. 项目概述</h2>
+  <p>本页是……给……用，回答……。查询区、列表和确认弹窗使用同一批……记录。</p>
+  <p>原型中的……是示例，用来把界面和口径走通，不代表真实业务数据。</p>
+
+  <h2 id="flow">2. 整体流程</h2>
+  <p>使用本页的核心操作如下：</p>
+  <ol>
+    <li>……</li>
+    <li>……</li>
+    <li>……</li>
+  </ol>
+
+  <h2 id="pages">3. 页面说明</h2>
+
+  <h3 id="list">3.1 页面主区域</h3>
+  <figure>
+    <img src="assets/page-slug/01-list.png" alt="一句话描述图里有什么">
+    <figcaption>图 1　页面主区域。默认查询为全部，示例 5 条，最右列为「操作」</figcaption>
+  </figure>
+  <p class="anno"><strong>标注:</strong> ……（原型与正式环境的差异、本页不提供的控件、示例数据边界）</p>
+  <p><strong>页面简述:</strong> ……</p>
+
+  <h4>3.1.1 查询区</h4>
+  <ul>
+    <li><strong>需求描述:</strong> ……</li>
+    <li><strong>内容:</strong> ……</li>
+    <li><strong>选项:</strong> ……</li>
+    <li><strong>数据来源:</strong> ……</li>
+  </ul>
+
+  <h4>3.1.2 列表字段</h4>
+  <ul>
+    <li><strong>需求描述:</strong> ……</li>
+    <li><strong>内容:</strong> 列从左到右如下。
+      <ul>
+        <li>字段名：类型。示例。边界规则。</li>
+      </ul>
+    </li>
+    <li><strong>交互:</strong> ……</li>
+    <li><strong>数据来源:</strong> ……</li>
+  </ul>
+
+  <h2 id="states">4. 状态与异常</h2>
+  <table>
+    <thead><tr><th>情况</th><th>页面表现</th></tr></thead>
+    <tbody>
+      <tr><td>……</td><td>……</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="scope">5. 原型边界</h2>
+  <ul>
+    <li>示例数据……</li>
+    <li>刷新后恢复……</li>
+    <li>窄屏时……</li>
+    <li>本版不包含……</li>
+  </ul>
+
+  <p class="foot">文档截图来自默认条件下……。交互以 <a href="../页面名.html">页面名</a> 为准。</p>
+</main>
+</body>
+</html>

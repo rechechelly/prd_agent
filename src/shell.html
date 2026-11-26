@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  /><title>叙页 · 产品需求工作台</title
+  ><style>
+    /* APP_CSS */
+  </style>
+  <body>
+    <div id="layout">
+      <aside id="sidebar">
+        <div class="treelabel">
+          文件目录
+          <button
+            id="newDoc"
+            title="新建根目录文件"
+            aria-label="新建根目录文件"
+          >
+            <i data-ico="plus"></i>
+          </button>
+        </div>
+        <div id="tree"></div>
+        <div class="sidefoot">
+          <button id="workspaceSettings">
+            <i data-ico="settings"></i>工作区设置
+          </button>
+          <a id="serverLink" href="http://127.0.0.1:4317/">进入登录版工作台 ↗</a
+          ><button id="logout" hidden>退出登录</button>
+        </div>
+      </aside>
+      <main>
+        <section id="work">
+          <div id="document">
+            <div id="workRail" class="editorRail">
+              <button
+                id="menu"
+                aria-label="文件目录"
+                title="展开或收起文件目录"
+              >
+                ☰
+              </button>
+              <button
+                id="completionToggle"
+                type="button"
+                aria-label="AI 文档补全"
+                aria-pressed="true"
+                title="开启或关闭 AI 文档补全"
+              >
+                AI 补全
+              </button>
+              <button type="button" id="completionModel" aria-label="选择文档补全模型" aria-haspopup="dialog" hidden>补全模型</button>
+              <button id="commentsToggle" hidden aria-expanded="false">
+                评论
+              </button>
+              <button id="share" type="button">分享</button>
+              <button
+                type="button"
+                id="assistantToggle"
+                title="写作助手"
+                aria-label="写作助手"
+              >
+                <i data-ico="chat"></i>
+              </button>
+            </div>
+            <div id="documentBody">
+              <nav id="documentOutline" aria-label="文档目录" hidden>
+                <div class="outlineHead">文档目录</div>
+                <div id="outlineItems"></div>
+                <div id="outlineResize" role="separator" tabindex="0"
+                  aria-orientation="vertical" aria-label="调整文档目录宽度"
+                  aria-controls="documentOutline" title="拖动调整目录宽度"></div>
+              </nav>
+              <div id="paperScroll">
+                <article id="paper">
+                  <div class="documentTitleRow">
+                    <button
+                      id="outlineToggle"
+                      type="button"
+                      hidden
+                      aria-controls="documentOutline"
+                      aria-expanded="false"
+                      aria-label="展开文档目录"
+                      title="展开文档目录"
+                    ><i data-ico="arrowRight"></i></button>
+                    <input id="title" aria-label="文档标题" />
+                  </div>
+                  <div class="meta">
+                    <span id="docType"></span><span id="date"></span>
+                    <div class="deliveryCommands">
+                      <button id="generationRuns" hidden>生成记录</button>
+                    </div>
+                  </div>
+                  <div id="changeBar" hidden></div>
+                  <div id="draftPreview" class="tiptap" hidden></div>
+                  <div id="editor"></div>
+                </article>
+              </div>
+            </div>
+            <footer>
+              <span id="wordCount"></span
+              ><span id="saved">离线演示 · 刷新重置</span>
+            </footer>
+          </div>
+          <aside class="prd-discussion" id="reviewPanel" hidden></aside>
+          <aside id="agent">
+            <div class="agentHead">
+              <div
+                id="chatTabs"
+                role="tablist"
+                aria-label="当前文件的会话"
+              ></div>
+              <button
+                type="button"
+                id="newChat"
+                title="新建会话"
+                aria-label="新建会话"
+              >
+                <i data-ico="plus"></i>
+              </button>
+              <button
+                id="chatHistory"
+                type="button"
+                title="历史会话"
+                aria-label="历史会话"
+              >
+                <i data-ico="history"></i>
+              </button>
+              <button
+                id="closeAgent"
+                type="button"
+                title="收起助手"
+                aria-label="收起助手"
+              >
+                <i data-ico="panel"></i>
+              </button>
+            </div>
+            <div id="conversation" aria-label="写作助手对话"></div>
+            <div class="composerDock">
+              <div id="agentReview" hidden>
+                <i data-ico="doc"></i><span></span
+                ><button type="button" id="compareAgentEdit">定位</button
+                ><button type="button" id="adoptAgentEdit">全部 Keep</button
+                ><button type="button" id="discardAgentEdit">全部 Undo</button>
+              </div>
+              <form id="askForm">
+                <input id="chatFiles" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx" multiple hidden />
+                <div id="references"></div>
+                <textarea
+                  id="question"
+                  aria-label="向写作助手提问"
+                  placeholder="提问或描述想修改的内容…"
+                  required
+                ></textarea>
+                <div class="composerTools">
+                  <details id="agentContextInfo">
+                    <summary title="上下文与工具" aria-label="上下文与工具">
+                      <i data-ico="agentMode"></i> Agent <i data-ico="down"></i>
+                    </summary>
+                    <div class="contextHelp">
+                      <b>上下文与工具</b>
+                      <div id="canvasContext" hidden>
+                        <p>
+                          当前画布和会话记录会用于本次提问。拖入目录中的文件可补充需求背景。
+                        </p>
+                        <p>
+                          <code>read_file</code> 读取图层和连线，<code
+                            >draw_canvas</code
+                          >
+                          提交绘图预览，<code>read_resource</code> 和
+                          <code>bash</code> 可查阅引用资料。
+                        </p>
+                      </div>
+                      <div id="writingContext">
+                        <p>
+                          当前文件的路径和内容会随提问发送。助手可在指定位置创建文件，也能按路径绘制其他画布。可读取工作区文档和
+                          已安装技能的参考资料。当前文档前四张内嵌图片中，符合大小限制的会随提问发送。
+                        </p>
+                        <p>粘贴图片、拖入文件或正文选区，即可加入本次提问。</p>
+                        <p>
+                          <code>list_file</code> 查看目录，<code>read_file</code> 读取正文，<code>write_file</code> 创建文件，<code>edit_file</code> 修改已有文件。正文修改由你采纳。
+                        </p>
+                      </div>
+                    </div>
+                  </details>
+                  <button type="button" id="agentModel" aria-label="选择助手模型" aria-haspopup="dialog">离线演示</button>
+                  <button
+                    type="button"
+                    id="attachContext"
+                    title="添加附件或引用"
+                    aria-label="添加附件或引用"
+                  >
+                    <i data-ico="clip"></i>
+                  </button>
+                  <button
+                    class="send"
+                    aria-label="发送"
+                    title="发送（Enter），换行（Shift + Enter）"
+                  >
+                    <i data-ico="up"></i>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </section>
+        <section id="emptyPage" class="subpage" hidden>
+          <h1>工作空间还没有文件</h1>
+          <button class="primary" id="emptyNewDoc">新建文件</button>
+        </section>
+        <section id="boardPage" hidden>
+          <div class="pagehead">
+            <div>
+              <small>原型画布</small>
+              <h1 id="boardTitle"></h1>
+            </div>
+            <div class="actions">
+              <button id="icons">图标库</button
+              ><button id="copyArt">复制为图片</button
+              ><button class="primary" id="pasteArt">插入到文档</button>
+            </div>
+          </div>
+          <div id="boardReview" hidden></div>
+          <div id="boardMount"></div>
+        </section>
+        <section id="result" hidden>
+          <div id="resultRail" class="editorRail">
+            <div id="htmlModes" role="group" aria-label="HTML 编辑模式" hidden>
+              <button id="renderMode">渲染模式</button
+              ><button id="sourceMode">Raw Text</button>
+            </div>
+          </div>
+          <h2 id="resultName"></h2>
+          <div id="htmlChangeBar" hidden></div>
+          <div id="folderItems" hidden></div>
+          <div id="deliveryBody">
+            <div id="deliveryPage">
+              <iframe
+                id="resultFrame"
+                title="生成的交付物"
+                sandbox="allow-scripts allow-forms"
+              ></iframe>
+              <div id="htmlSourceEditor" hidden>
+                <pre id="htmlLineNumbers" aria-hidden="true"></pre>
+                <div class="codePane">
+                  <pre id="htmlPaint" aria-hidden="true"></pre>
+                  <textarea
+                    id="htmlInput"
+                    aria-label="HTML 源码"
+                    spellcheck="false"
+                    wrap="off"
+                    autocapitalize="off"
+                    autocomplete="off"
+                  ></textarea>
+                </div>
+              </div>
+              <pre id="htmlDiff" aria-label="HTML 源码修改" hidden></pre>
+              <iframe
+                id="prdInline"
+                title="图文 PRD 内联修改"
+                sandbox="allow-same-origin"
+                hidden
+              ></iframe>
+              <div id="imageOutline" hidden></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <template id="legacyPrdToolbar">
+      <select aria-label="段落样式" id="format">
+        <option value="0">正文</option>
+        <option value="2">二级标题</option>
+        <option value="3">三级标题</option></select
+      ><span class="sep"></span
+      ><button data-cmd="bold" title="粗体"><b>B</b></button
+      ><button data-cmd="italic" title="斜体"><em>I</em></button
+      ><button data-cmd="list" title="无序列表">
+        <i data-ico="list"></i></button
+      ><span class="sep"></span
+      ><button data-cmd="image" title="插入图片">
+        <i data-ico="image"></i></button
+      ><button data-cmd="table" title="插入表格">
+        <i data-ico="table"></i></button
+      ><button data-cmd="markdown" title="插入 Markdown">M↓</button
+      ><button data-cmd="undo" title="撤销">
+        <i data-ico="undo"></i>
+      </button>
+      <select class="tableOperations" aria-label="表格行列操作" hidden>
+        <option value="">表格行列</option>
+        <option value="addRowBefore">在上方插入行</option>
+        <option value="addRowAfter">在下方插入行</option>
+        <option value="deleteTable">删除整个表格</option>
+        <option value="deleteRow">删除当前行</option>
+        <option value="addColumnBefore">在左侧插入列</option>
+        <option value="addColumnAfter">在右侧插入列</option>
+        <option value="deleteColumn">删除当前列</option>
+      </select>
+    </template>
+    <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+      <div class="historyHead">
+        <h2 id="settingsTitle">工作区设置</h2>
+        <button id="closeSettings" aria-label="关闭设置">×</button>
+      </div>
+      <nav class="settingsTabs" aria-label="设置分类">
+        <button id="agentSettings" data-pane="agentPage">
+          Agent 工具与技能</button
+        ><button id="models" data-pane="modelPage">供应商管理</button>
+      </nav>
+      <section id="agentPage" class="subpage" hidden>
+        <h1>Agent 设置</h1>
+        <h2>工具</h2>
+        <dl id="agentToolList"></dl>
+        <h2>技能</h2>
+        <dl id="agentSkillList"></dl>
+        <button type="button" id="importSkill" class="outline">导入技能文件夹</button>
+        <input id="skillFolder" type="file" webkitdirectory multiple hidden>
+        <p id="skillStatus" role="status"></p>
+      </section>
+      <section id="modelPage" class="subpage" hidden>
+        <form id="modelForm">
+          <label>供应商<select id="providerChoice"></select></label>
+          <label>名称<input name="name" maxlength="100" required></label>
+          <label>Base URL<input name="base" type="url" required placeholder="https://api.example.com/v1"></label>
+          <label>API Key<input name="apiKey" type="password" autocomplete="new-password"></label>
+          <label>可用模型（每行一个）<textarea name="models" rows="5" required spellcheck="false"></textarea></label>
+          <div class="providerActions"><button type="button" id="discoverModels">获取模型列表</button><button type="button" id="testModel">测试首个模型</button><button type="button" id="removeProvider">删除供应商</button><button class="primary" type="submit">保存供应商</button></div>
+          <p id="modelStatus" role="status"></p>
+        </form>
+      </section>
+    </dialog>
+    <dialog id="historyDialog">
+      <div class="historyHead">
+        <h2>历史会话</h2>
+        <button id="closeHistory" aria-label="关闭历史会话">×</button>
+      </div>
+      <div id="historyList"></div>
+    </dialog>
+    <dialog id="modal">
+      <form method="dialog" id="modalForm">
+        <h2 id="modalTitle"></h2>
+        <div id="fields"></div>
+        <div class="actions">
+          <button type="button" id="cancel">取消</button
+          ><button id="submit" class="primary">确定</button>
+        </div>
+      </form>
+    </dialog>
+    <input
+      id="file"
+      type="file"
+      accept="image/png,image/jpeg,image/webp,image/gif"
+      hidden
+    />
+    <div id="toast" role="status" hidden></div>
+    <div id="suggest" hidden></div>
+    <script>
+      /* APP_JS */
+    </script>
+  </body>
+</html>

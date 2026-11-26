@@ -1,0 +1,117 @@
+<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Token 销量看板</title>
+<style>
+:root{color:#191e35;background:#f5f6fb;font:14px/1.5 Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;--ink:#191e35;--muted:#5b657f;--line:#e2e5f0;--accent:#5b45bb;--panel:white}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #7956ec;outline-offset:2px}h1,h2,p{margin:0}
+.mast{background:#1a1b34;color:#fff}.mast>div{max-width:1380px;margin:auto;padding:15px 30px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:620}.mark{display:inline-flex;width:30px;height:30px;border-radius:9px;background:#976ffc;color:#17112e;align-items:center;justify-content:center;font-size:18px;line-height:1}.mast small{margin-left:auto;color:#e1ddfb;font-weight:400}
+main{max-width:1380px;margin:auto;padding:27px 30px 34px}.heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:17px}.heading h1{font-size:32px;line-height:1.25;letter-spacing:-1px}.heading p,.section p,.number small{color:var(--muted);margin-top:4px}.tz{color:var(--muted);font-size:12px;white-space:nowrap}
+.control,.section,.number{background:var(--panel);border:1px solid var(--line);border-radius:12px}.control{padding:13px 15px;margin-bottom:14px}.filters{display:flex;gap:13px;align-items:flex-end;flex-wrap:wrap}.filters label{display:grid;gap:4px;font-weight:600;font-size:12px}.filters input,.filters select,.metric select{background:#fff;border:1px solid #d5daeb;border-radius:7px;padding:7px 10px;font-size:13px}.filters select{min-width:132px}.filters .actions{display:flex;gap:7px}.filters button{background:#fff;border:1px solid #d5daeb;border-radius:7px;padding:7px 14px}.filters button.primary{background:var(--accent);color:white;border-color:var(--accent)}.filters output{align-self:center;font-size:12px;color:#8c3045}.period{margin-left:auto;align-self:flex-end;padding-bottom:7px;font-size:12px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px}.number{padding:14px 14px 13px;border-top:3px solid var(--tone);min-width:0}.number dt{font-weight:650;color:#343c57;white-space:nowrap;font-size:13px}.number dd{margin:4px 0 0;font-size:clamp(17px,2.2vw,27px);line-height:1.25;letter-spacing:-.85px;font-weight:725;font-variant-numeric:tabular-nums}.number small{font-size:11px;display:block;min-height:16px}dl{margin:0}
+.section{padding:15px 17px;margin-top:13px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}.section h2{font-size:18px;letter-spacing:-.2px}.section p{font-size:12px}.metric{text-align:right;white-space:nowrap;font-size:12px;align-self:center}.metric label{margin-right:5px}
+.chart{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr);height:196px;margin-top:11px}.axis{display:flex;flex-direction:column;justify-content:space-between;padding:0 8px 29px 0;text-align:right;color:var(--muted);font-size:10px;line-height:1}.plot{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;position:relative;padding:0 5px;background:repeating-linear-gradient(to bottom,#e8ebf5 0 1px,transparent 1px 25%);background-size:100% calc(100% - 28px);background-repeat:no-repeat}.bar{border:0;background:transparent;padding:0;display:grid;grid-template-rows:1fr 28px;justify-items:center;min-width:0;position:relative}.bar .column{width:58%;max-width:75px;background:var(--bar,#8065df);border-radius:5px 5px 0 0;height:var(--height);align-self:end;border:1px solid #1413291c;border-bottom:0}.bar:hover .column,.bar:focus-visible .column{filter:brightness(.87)}.bar .day{align-self:center;color:var(--muted);font-size:11px}.bar .tip{display:none;position:absolute;left:50%;top:4px;transform:translateX(-50%);background:#222347;color:white;border-radius:6px;padding:4px 7px;white-space:nowrap;font-size:11px;z-index:1}.bar:hover .tip,.bar:focus .tip{display:block}.bar:first-child .tip{left:0;transform:none}.bar:last-child .tip{left:auto;right:0;transform:none}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:separate;border-spacing:0;min-width:680px;text-align:right;font-variant-numeric:tabular-nums}thead{background:#f5f4fd}th,td{padding:8px 11px;border-bottom:1px solid #e8eaf4;white-space:nowrap}tbody tr:last-child td{border-bottom:0}th:first-child,td:first-child{position:sticky;left:0;text-align:left;background:white;z-index:1}th:first-child{background:#f5f4fd}th>button{border:0;background:transparent;font-weight:650;padding:3px 0;white-space:nowrap}th[aria-sort=ascending] button,th[aria-sort=descending] button{color:#5037a4}td:first-child{font-weight:650}.share{background:#eeebf9;width:54px;height:4px;border-radius:2px;display:inline-block;margin-left:8px;vertical-align:middle;overflow:hidden}.share>span{height:100%;background:#a48aee;display:block}.empty{padding:30px 8px;text-align:center;color:var(--muted);background:#f8f8fc;border-radius:7px}
+@media(max-width:860px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.period{margin-left:0}.tz{display:none}}
+@media(max-width:520px){main{padding:16px 12px 23px}.mast>div{padding:12px}.heading h1{font-size:26px}.heading p{font-size:12px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.number{padding:8px 9px}.filters{gap:8px}.filters input,.filters select{max-width:144px;min-width:0}.section{padding:12px}.chart{height:152px;grid-template-columns:35px minmax(0,1fr)}.bar .day{font-size:9px}.metric label{display:none}}
+</style></head>
+<body>
+<header class="mast"><div><span class="mark" aria-hidden="true">▥</span> 模型运营 <small>虚构演示数据</small></div></header>
+<main>
+<section data-prd-view="overview">
+  <div class="heading"><div><h1>Token 销量看板</h1><p>查看用量变化，并定位贡献变化的模型。</p></div><span class="tz">统计时区 · Asia/Shanghai</span></div>
+  <div class="control"><form class="filters" id="filters">
+    <label>开始日期<input id="from" type="date" required></label><label>结束日期<input id="to" type="date" required></label>
+    <label>模型<select id="model"><option value="">全部模型</option></select></label>
+    <div class="actions"><button class="primary" type="button" id="apply">应用筛选</button><button type="button" id="reset">重置</button></div>
+    <output id="error" role="alert"></output><span class="period" id="period"></span>
+  </form></div>
+  <dl class="kpis" id="kpis"></dl>
+</section>
+<section class="section" data-prd-view="trend">
+  <div class="section-head"><div><h2>用量趋势</h2><p id="trend-note"></p></div><div class="metric"><label for="metric">趋势指标</label><select id="metric" aria-label="趋势指标"></select></div></div>
+  <div id="trend"></div>
+</section>
+<section class="section" data-prd-view="models">
+  <div class="section-head"><div><h2>模型看板</h2><p>比较各模型的用量。模型名称旁的条形表示输入 Token 占比。</p></div><p id="model-count"></p></div>
+  <div class="table-wrap" id="model-table"></div>
+</section>
+</main>
+<script>
+const data = [["2026-11-16","长文模型 A",843125,124605,596400,80053,2311],["2026-11-16","通用模型 B",633143,101388,418190,48458,3834],["2026-11-16","低延迟模型 C",342664,51120,225602,29075,5261],["2026-11-16","代码模型 D",287018,75544,159218,22010,1310],["2026-11-17","长文模型 A",1023750,151200,723240,97020,2474],["2026-11-17","通用模型 B",767340,108528,507780,58800,4649],["2026-11-17","低延迟模型 C",415800,61992,273420,31122,6388],["2026-11-17","代码模型 D",307230,91728,193200,26691,1588],["2026-11-18","长文模型 A",1200000,177120,846720,100320,2902],["2026-11-18","通用模型 B",793440,127296,595200,68880,5443],["2026-11-18","低延迟模型 C",487080,72576,282720,36504,7488],["2026-11-18","代码模型 D",360360,107520,226320,31248,1642],["2026-11-19","长文模型 A",1345312,198450,837900,112613,3255],["2026-11-19","通用模型 B",890663,142800,667275,77175,5387],["2026-11-19","低延迟模型 C",545738,71820,317363,40950,8395],["2026-11-19","代码模型 D",404250,120540,253575,30923,1843],["2026-11-20","长文模型 A",1588125,206910,990990,133100,3845],["2026-11-20","通用模型 B",1052700,168674,787710,80465,6371],["2026-11-20","低延迟模型 C",569003,84942,375100,48370,9910],["2026-11-20","代码模型 D",477496,142296,264385,36572,2178],["2026-11-21","长文模型 A",1080625,159705,764400,102602,2962],["2026-11-21","通用模型 B",811492,129948,535990,62108,4914],["2026-11-21","低延迟模型 C",439189,65520,289153,37265,6743],["2026-11-21","代码模型 D",367868,96824,204068,28210,1679],["2026-11-22","长文模型 A",1608750,237600,1136520,152460,3887],["2026-11-22","通用模型 B",1205820,170544,797940,92400,7306],["2026-11-22","低延迟模型 C",653400,97416,429660,48906,10039],["2026-11-22","代码模型 D",482790,144144,303600,41943,2495]];
+const metrics = [
+  { name:'输入 Token', unit:'Token', color:'#7757ca', note:'归一后的输入总量' },
+  { name:'输出 Token', unit:'Token', color:'#3766b6', note:'模型生成量' },
+  { name:'缓存命中 Token', unit:'Token', color:'#268074', note:'从缓存读取的输入量' },
+  { name:'缓存创建 Token', unit:'Token', color:'#ab5836', note:'写入缓存的输入量' },
+  { name:'调用次数', unit:'次', color:'#785286', note:'独立请求数' },
+];
+const byId = id => document.getElementById(id);
+const [from,to,model,metric] = ['from','to','model','metric'].map(byId);
+const models = [...new Set(data.map(row=>row[1]))];
+const defaults = [data[0][0], data.at(-1)[0], ''];
+const integer = new Intl.NumberFormat('zh-CN');
+const compact = new Intl.NumberFormat('zh-CN',{notation:'compact',maximumFractionDigits:1});
+const format = value => integer.format(value);
+let selected, sortColumn=0, direction=-1;
+for (const name of models) model.add(new Option(name,name));
+metrics.forEach((m,index)=>metric.add(new Option(m.name,index)));
+function totals(rows) {
+  return rows.reduce((sum,row)=>sum.map((n,i)=>n+row[i+2]),[0,0,0,0,0]);
+}
+function apply() {
+  if(from.value>to.value) { byId('error').textContent='开始日期不能晚于结束日期';return; }
+  byId('error').textContent='';
+  selected=data.filter(([day,name])=>day>=from.value&&day<=to.value&&(!model.value||name===model.value));
+  byId('period').textContent=from.value+' 至 '+to.value+' · '+(model.value||'全部模型');
+  const total=totals(selected);
+  byId('kpis').innerHTML=metrics.map((m,i)=>'<div class="number" style="--tone:'+m.color+'"><dt>'+m.name+'</dt><dd>'+(selected.length?format(total[i]):'—')+'</dd><small>'+m.note+'</small></div>').join('');
+  drawTrend();drawTable();
+}
+function reset() {
+  [from.value,to.value,model.value]=defaults;
+  metric.value='0';sortColumn=0;direction=-1;apply();
+}
+function drawTrend() {
+  const index=Number(metric.value), m=metrics[index], root=byId('trend');
+  byId('trend-note').textContent='按日汇总 · 单位 '+m.unit;
+  if(!selected.length){root.innerHTML='<p class="empty">当前筛选条件下无趋势数据</p>';return;}
+  const dates=[...new Set(selected.map(r=>r[0]))];
+  const values=dates.map(date=>totals(selected.filter(r=>r[0]===date))[index]);
+  const peak=Math.max(1,...values), step=Math.pow(10,Math.floor(Math.log10(peak)))/2, top=Math.max(step,Math.ceil(peak/step)*step);
+  root.innerHTML='<div class="chart"><div class="axis">'+[1,.75,.5,.25,0].map(r=>'<span>'+compact.format(top*r)+'</span>').join('')+'</div><div class="plot">'+dates.map((day,i)=>{
+    const tip=day+' · '+format(values[i])+' '+m.unit;
+    return '<button type="button" class="bar" aria-label="'+tip+'"><span class="column" style="--height:'+(values[i]/top*100)+'%;--bar:'+m.color+'"></span><span class="day">'+day.slice(5)+'</span><span class="tip" aria-hidden="true">'+tip+'</span></button>';
+  }).join('')+'</div></div>';
+}
+function drawTable() {
+  const root=byId('model-table');
+  const modelRows=models.map(name=>({name, rows:selected.filter(r=>r[1]===name)})).filter(m=>m.rows.length).map(m=>({name:m.name, values:totals(m.rows)}));
+  byId('model-count').textContent=modelRows.length+' 个模型';
+  if(!modelRows.length){root.innerHTML='<p class="empty">当前筛选条件下无模型数据</p>';return;}
+  modelRows.sort((a,b)=>direction*(a.values[sortColumn]-b.values[sortColumn])||a.name.localeCompare(b.name));
+  const allInputs=totals(selected)[0];
+  root.innerHTML='<table aria-label="模型用量明细"><thead><tr><th scope="col">模型</th>'+metrics.map((m,i)=>{
+    const active=i===sortColumn;
+    const state=active?' aria-sort="'+(direction===1?'ascending':'descending')+'"':'';
+    return '<th scope="col"'+state+'><button type="button" data-sort="'+i+'">'+m.name+(active?(direction===1?' ↑':' ↓'):'')+'</button></th>';
+  }).join('')+'</tr></thead><tbody>'+modelRows.map(m=>{
+    const share=allInputs?m.values[0]/allInputs*100:0;
+    return '<tr><td>'+m.name+'<span class="share" title="输入 Token 占 '+share.toFixed(1)+'%"><span style="width:'+share+'%"></span></span></td>'+m.values.map(n=>'<td>'+format(n)+'</td>').join('')+'</tr>';
+  }).join('')+'</tbody></table>';
+}
+byId('model-table').addEventListener('click',event=>{
+  const button=event.target.closest('[data-sort]');
+  if(!button)return;
+  const next=Number(button.dataset.sort);
+  direction=sortColumn===next?-direction:-1;
+  sortColumn=next;drawTable();
+  byId('model-table').querySelector('[data-sort="'+next+'"]').focus();
+});
+byId('apply').addEventListener('click',()=>{
+  if(byId('filters').reportValidity())apply();
+});
+byId('reset').addEventListener('click',reset);
+metric.addEventListener('change',drawTrend);
+window.showPrdView = reset;
+reset();
+</script></body></html>

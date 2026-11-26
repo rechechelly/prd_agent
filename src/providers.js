@@ -1,0 +1,243 @@
+import { $, toast } from "./shared";
+import { api, online } from "./service";
+
+let catalog = { providers: [], selections: { agent: null, completion: null } };
+const controls = { agent: "agentModel", completion: "completionModel" };
+export function selectedModel(scope) {
+  return catalog.selections[scope];
+}
+export function setModels(data) {
+  catalog = { providers: data.providers, selections: data.selections };
+  for (const [scope, control] of Object.entries(controls)) {
+    const provider = catalog.providers.find((p) =>
+      p.models.some((m) => m.id === selectedModel(scope)),
+    );
+    const model = provider?.models.find((m) => m.id === selectedModel(scope));
+    $(control).textContent = (model?.model || "选择模型") + " ▾";
+    $(control).title = provider
+      ? provider.name + " · " + model.model
+      : "配置模型供应商";
+  }
+}
+function openManager() {
+  if (!$("settingsDialog").open) $("workspaceSettings").click();
+  $("models").click();
+}
+function installPicker(onCompletionChange) {
+  const picker = document.createElement("div");
+  picker.popover = "auto";
+  picker.className = "modelPicker";
+  picker.setAttribute("role", "dialog");
+  picker.setAttribute("aria-label", "选择模型");
+  picker.innerHTML =
+    '<input type="search" aria-label="搜索模型" placeholder="搜索模型或供应商"><div class="modelOptions"></div><button type="button" class="manageProviders">管理供应商</button>';
+  document.body.append(picker);
+  const search = picker.querySelector("input"),
+    options = picker.querySelector(".modelOptions");
+  let scope, trigger;
+  function place() {
+    const anchor = trigger.getBoundingClientRect();
+    const above =
+      innerHeight - anchor.bottom < picker.offsetHeight &&
+      anchor.top > innerHeight - anchor.bottom;
+    picker.style.left =
+      Math.max(
+        6,
+        Math.min(
+          innerWidth - picker.offsetWidth - 6,
+          anchor.right - picker.offsetWidth,
+        ),
+      ) + "px";
+    picker.style.top =
+      Math.max(
+        6,
+        Math.min(
+          innerHeight - picker.offsetHeight - 6,
+          above ? anchor.top - picker.offsetHeight - 4 : anchor.bottom + 4,
+        ),
+      ) + "px";
+  }
+  function filter() {
+    options.replaceChildren();
+    const groups = new Map();
+    for (const p of catalog.providers) {
+      const hits = p.models.filter((m) =>
+        (p.name + " " + p.base + " " + m.model)
+          .toLowerCase()
+          .includes(search.value.trim().toLowerCase()),
+      );
+      if (!hits.length) continue;
+      if (!groups.has(p.base)) groups.set(p.base, []);
+      groups.get(p.base).push({ provider: p, models: hits });
+    }
+    for (const [base, group] of groups) {
+      const head = document.createElement("strong");
+      head.textContent = group.map((x) => x.provider.name).join(" / ");
+      head.title = base;
+      const url = document.createElement("small");
+      url.textContent = base;
+      head.append(url);
+      options.append(head);
+      for (const { provider, models } of group)
+        for (const m of models) {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.textContent =
+            (group.length > 1 ? provider.name + " · " : "") + m.model;
+          row.setAttribute(
+            "aria-pressed",
+            String(m.id === selectedModel(scope)),
+          );
+          row.onclick = async () => {
+            const purpose = scope;
+            picker.hidePopover();
+            try {
+              const result = await api("models/switch", {
+                scope: purpose,
+                id: m.id,
+              });
+              setModels(result);
+              if (purpose === "completion") onCompletionChange();
+            } catch (e) {
+              toast(e.message);
+            }
+          };
+          options.append(row);
+        }
+    }
+    if (!groups.size)
+      options.textContent = catalog.providers.length
+        ? "没有匹配的模型"
+        : "尚未配置供应商";
+  }
+  search.oninput = () => {
+    filter();
+    place();
+  };
+  picker.querySelector(".manageProviders").onclick = () => {
+    picker.hidePopover();
+    openManager();
+  };
+  picker.onkeydown = (e) => {
+    if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+    const items = [
+      search,
+      ...options.querySelectorAll("button"),
+      picker.lastElementChild,
+    ];
+    e.preventDefault();
+    items[
+      (items.indexOf(document.activeElement) +
+        (e.key === "ArrowDown" ? 1 : -1) +
+        items.length) %
+        items.length
+    ].focus();
+  };
+  for (const [purpose, id] of Object.entries(controls)) {
+    $(id).disabled = !online;
+    $(id).onclick = () => {
+      scope = purpose;
+      trigger = $(id);
+      search.value = "";
+      filter();
+      picker.showPopover();
+      place();
+      search.focus();
+    };
+  }
+  window.addEventListener("resize", () => {
+    if (picker.matches(":popover-open")) place();
+  });
+}
+
+export function initModels(onCompletionChange) {
+  installPicker(onCompletionChange);
+  $("completionModel").hidden = !online;
+  const form = $("modelForm"),
+    choice = $("providerChoice"),
+    fields = form.elements,
+    status = $("modelStatus");
+  let epoch = 0;
+  function load(id) {
+    epoch++;
+    const p = catalog.providers.find((p) => p.id === id);
+    choice.replaceChildren(
+      new Option("新增供应商", ""),
+      ...catalog.providers.map(
+        (p) => new Option(p.name + " · " + p.base, p.id),
+      ),
+    );
+    choice.value = p?.id || "";
+    form.dataset.providerId = p?.id || crypto.randomUUID();
+    fields.name.value = p?.name || "";
+    fields.base.value = p?.base || "";
+    fields.apiKey.value = "";
+    fields.apiKey.placeholder = p ? "留空沿用当前地址的密钥" : "输入 API Key";
+    fields.models.value = p?.models.map((m) => m.model).join("\n") || "";
+    $("removeProvider").hidden = !p;
+    status.textContent = "";
+  }
+  $("models").onclick = () => {
+    form.hidden = !online;
+    if (online) load(catalog.providers[0]?.id);
+    else toast("请登录服务版工作台配置供应商");
+  };
+  choice.onchange = () => load(choice.value);
+  form.oninput = () => {
+    epoch++;
+    status.textContent = "";
+  };
+  async function submit(action) {
+    const models = fields.models.value
+      .split(/\r?\n/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const data = {
+      id: form.dataset.providerId,
+      name: fields.name.value.trim(),
+      base: fields.base.value.trim(),
+      apiKey: fields.apiKey.value,
+      models,
+    };
+    if (
+      action === "delete" &&
+      !confirm("删除供应商「" + data.name + "」及其模型配置？")
+    )
+      return;
+    const pass = ++epoch;
+    if (action === "save" && !form.reportValidity()) return;
+    status.textContent = "处理中…";
+    try {
+      const result = await api(
+        "providers/" + action,
+        action === "delete" ? { id: data.id } : { ...data, model: models[0] },
+      );
+      if (action === "save" || action === "delete") {
+        setModels(result);
+        onCompletionChange();
+        if (pass === epoch) {
+          load(action === "delete" ? "" : result.savedProviderId);
+          status.textContent =
+            action === "delete" ? "已删除供应商" : "供应商已保存";
+        }
+      } else if (pass === epoch) {
+        if (action === "discover") {
+          fields.models.value = [
+            ...new Set([...models, ...result.models]),
+          ].join("\n");
+          status.textContent =
+            "已获取 " + result.models.length + " 个模型，可调整后保存";
+        } else status.textContent = result.message;
+      }
+    } catch (e) {
+      if (pass === epoch) status.textContent = e.message;
+    }
+  }
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    submit("save");
+  };
+  $("discoverModels").onclick = () => submit("discover");
+  $("testModel").onclick = () => submit("test");
+  $("removeProvider").onclick = () => submit("delete");
+}
