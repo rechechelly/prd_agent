@@ -1,4 +1,4 @@
-import { $, toast } from "./shared";
+import { $, confirmDelete, toast } from "./shared";
 import { api, online } from "./service";
 
 let catalog = { providers: [], selections: { agent: null, completion: null } };
@@ -153,40 +153,93 @@ function installPicker(onCompletionChange) {
 export function initModels(onCompletionChange) {
   installPicker(onCompletionChange);
   $("completionModel").hidden = !online;
+  const directory = $("providerDirectory"),
+    list = $("providerList");
   const form = $("modelForm"),
-    choice = $("providerChoice"),
     fields = form.elements,
     status = $("modelStatus");
+  const fieldset = $("providerFields"),
+    back = $("backToProviders");
   let epoch = 0;
-  function load(id) {
-    epoch++;
-    const p = catalog.providers.find((p) => p.id === id);
-    choice.replaceChildren(
-      new Option("新增供应商", ""),
-      ...catalog.providers.map(
-        (p) => new Option(p.name + " · " + p.base, p.id),
-      ),
-    );
-    choice.value = p?.id || "";
-    form.dataset.providerId = p?.id || crypto.randomUUID();
-    fields.name.value = p?.name || "";
-    fields.base.value = p?.base || "";
-    fields.apiKey.value = "";
-    fields.apiKey.placeholder = p ? "留空沿用当前地址的密钥" : "输入 API Key";
-    fields.models.value = p?.models.map((m) => m.model).join("\n") || "";
-    $("removeProvider").hidden = !p;
-    status.textContent = "";
+
+  function renderList() {
+    list.replaceChildren();
+    for (const provider of catalog.providers) {
+      const item = document.createElement("li");
+      const row = document.createElement("button");
+      row.type = "button";
+      row.dataset.id = provider.id;
+      const name = document.createElement("strong");
+      const base = document.createElement("small");
+      const count = document.createElement("span");
+      name.textContent = provider.name;
+      base.textContent = provider.base;
+      count.textContent = provider.models.length + " 个模型";
+      row.append(name, base, count);
+      row.onclick = () => editProvider(provider);
+      item.append(row);
+      list.append(item);
+    }
+    $("providerListStatus").textContent = catalog.providers.length
+      ? ""
+      : "尚未配置供应商";
   }
-  $("models").onclick = () => {
-    form.hidden = !online;
-    if (online) load(catalog.providers[0]?.id);
-    else toast("请登录服务版工作台配置供应商");
-  };
-  choice.onchange = () => load(choice.value);
-  form.oninput = () => {
+  function showList(focusId) {
     epoch++;
+    form.reset();
+    form.hidden = true;
+    directory.hidden = false;
+    renderList();
+    if (focusId !== undefined) {
+      const previous = Array.from(list.querySelectorAll("button")).find(
+        (row) => row.dataset.id === focusId,
+      );
+      (previous || $("newProvider")).focus();
+    }
+  }
+  function editProvider(provider) {
+    epoch++;
+    directory.hidden = true;
+    form.hidden = false;
+    fieldset.disabled = back.disabled = false;
+    form.dataset.providerId = provider?.id || crypto.randomUUID();
+    $("providerFormTitle").textContent = provider ? "编辑供应商" : "新增供应商";
+    fields.name.value = provider?.name || "";
+    fields.base.value = provider?.base || "";
+    fields.apiKey.value = "";
+    fields.apiKey.required = !provider;
+    fields.apiKey.placeholder = provider
+      ? "留空沿用当前地址的密钥"
+      : "输入 API Key";
+    fields.models.value = provider?.models.map((m) => m.model).join("\n") || "";
+    $("removeProvider").hidden = !provider;
     status.textContent = "";
+    fields.name.focus();
+  }
+  $("newProvider").onclick = () => editProvider();
+  back.onclick = () => showList(form.dataset.providerId);
+  $("models").onclick = async () => {
+    showList();
+    $("newProvider").disabled = !online;
+    if (!online) {
+      $("providerListStatus").textContent = "请登录服务版工作台配置供应商";
+      return;
+    }
+    const pass = epoch;
+    try {
+      const latest = await api("models");
+      if (pass === epoch) {
+        setModels(latest);
+        renderList();
+      }
+    } catch (error) {
+      if (pass === epoch) $("providerListStatus").textContent = error.message;
+    }
   };
+  $("settingsDialog").addEventListener("close", () => {
+    epoch++;
+    fields.apiKey.value = "";
+  });
   async function submit(action) {
     const models = fields.models.value
       .split(/\r?\n/)
@@ -199,13 +252,10 @@ export function initModels(onCompletionChange) {
       apiKey: fields.apiKey.value,
       models,
     };
-    if (
-      action === "delete" &&
-      !confirm("删除供应商「" + data.name + "」及其模型配置？")
-    )
-      return;
-    const pass = ++epoch;
     if (action === "save" && !form.reportValidity()) return;
+    const pass = ++epoch;
+    fieldset.disabled = true;
+    back.disabled = action === "save" || action === "delete";
     status.textContent = "处理中…";
     try {
       const result = await api(
@@ -216,9 +266,12 @@ export function initModels(onCompletionChange) {
         setModels(result);
         onCompletionChange();
         if (pass === epoch) {
-          load(action === "delete" ? "" : result.savedProviderId);
-          status.textContent =
-            action === "delete" ? "已删除供应商" : "供应商已保存";
+          showList(result.savedProviderId || "");
+          if (catalog.providers.length)
+            $("providerListStatus").textContent =
+              action === "delete" ? "已删除供应商" : "供应商已保存";
+        } else if (!directory.hidden) {
+          renderList();
         }
       } else if (pass === epoch) {
         if (action === "discover") {
@@ -231,6 +284,8 @@ export function initModels(onCompletionChange) {
       }
     } catch (e) {
       if (pass === epoch) status.textContent = e.message;
+    } finally {
+      if (pass === epoch) fieldset.disabled = back.disabled = false;
     }
   }
   form.onsubmit = (e) => {
@@ -239,5 +294,13 @@ export function initModels(onCompletionChange) {
   };
   $("discoverModels").onclick = () => submit("discover");
   $("testModel").onclick = () => submit("test");
-  $("removeProvider").onclick = () => submit("delete");
+  $("removeProvider").onclick = () => {
+    const provider = catalog.providers.find(
+      (p) => p.id === form.dataset.providerId,
+    );
+    if (provider)
+      confirmDelete("删除供应商「" + provider.name + "」及其模型配置？", () =>
+        submit("delete"),
+      );
+  };
 }

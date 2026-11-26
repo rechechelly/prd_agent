@@ -22,7 +22,7 @@
     "start": "node server/index.mjs",
     "test": "node --test server/tests/*.test.mjs"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=24.0.0"

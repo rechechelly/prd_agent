@@ -8,6 +8,7 @@ export const esc = (value) =>
       ],
   );
 const paths = {
+  quote: "M4 6h6v7H6c0 2 1 3 3 4l-1 2c-3-1-5-4-5-7z M15 6h6v7h-4c0 2 1 3 3 4l-1 2c-3-1-5-4-5-7z",
   pencil: "M4 16l11-11 4 4L8 20l-5 1z M13 7l4 4",
   chat: "M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2z",
   history: "M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18z M12 7v5l3 2",
@@ -76,15 +77,49 @@ export function dialog(title, fields, callback, action = "确定") {
   };
 }
 $("cancel").onclick = () => $("modal").close();
-$("modal").onclick = (e) => {
-  if (e.target === $("modal")) {
-    const r = $("modal").getBoundingClientRect();
+export function confirmDelete(message, onConfirm) {
+  dialog("确认删除", "<p>" + esc(message) + "</p>", onConfirm, "删除");
+}
+
+// Browsers with native light dismiss handle the topmost dialog and its backdrop.
+if (!("closedBy" in HTMLDialogElement.prototype)) {
+  let pressed;
+  function backdrop(event) {
+    const dialog = event.target;
     if (
-      e.clientX < r.left ||
-      e.clientX > r.right ||
-      e.clientY < r.top ||
-      e.clientY > r.bottom
+      !(dialog instanceof HTMLDialogElement) ||
+      !dialog.matches('[open][closedby="any"]')
     )
-      $("modal").close();
+      return null;
+    const rect = dialog.getBoundingClientRect();
+    return event.clientX < rect.left ||
+      event.clientX >= rect.right ||
+      event.clientY < rect.top ||
+      event.clientY >= rect.bottom
+      ? dialog
+      : null;
   }
-};
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      pressed = event.button === 0 && event.isPrimary ? backdrop(event) : null;
+    },
+    true,
+  );
+  document.addEventListener(
+    "pointercancel",
+    () => {
+      pressed = null;
+    },
+    true,
+  );
+  document.addEventListener(
+    "click",
+    (event) => {
+      const dialog = backdrop(event);
+      if (event.detail && dialog && pressed === dialog) dialog.close();
+      pressed = null;
+    },
+    true,
+  );
+}

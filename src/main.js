@@ -35,7 +35,7 @@ import {
   addIcon,
 } from "./board";
 import { openGenerationLog } from "./generation-log";
-import { $, esc, icon, decorate, dialog, toast } from "./shared";
+import { $, esc, icon, decorate, dialog, confirmDelete, toast } from "./shared";
 import DOMPurify from "dompurify";
 import { installLayout } from "./layout";
 import {
@@ -102,7 +102,6 @@ const sending = new Map();
 const edits = new WeakMap();
 const composers = new WeakMap();
 const pendingUploads = new WeakMap();
-const externalApis = new WeakMap();
 let currentComposer;
 function switchComposer(target) {
   if (currentComposer === target) return;
@@ -189,21 +188,6 @@ function renderQuotes() {
   }
   $("askForm").querySelector(".send").disabled =
     !!pendingUploads.get(currentComposer) || sending.has(currentComposer);
-  if (externalApis.has(currentComposer)) {
-    const tag = document.createElement("button");
-    tag.type = "button";
-    tag.className = "ref";
-    tag.textContent =
-      "外部 API · " +
-      new URL(externalApis.get(currentComposer).base).host +
-      " ×";
-    tag.title = "移除本次接口";
-    tag.onclick = () => {
-      externalApis.delete(currentComposer);
-      renderQuotes();
-    };
-    area.append(tag);
-  }
   quoted.forEach((ref, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -406,6 +390,12 @@ function tree() {
     docs,
     closed,
     selectDoc: openDoc,
+    quoteFile(ref) {
+      openAgent = true;
+      $("sidebar").classList.remove("open");
+      header();
+      attachFile(ref);
+    },
     createChild: create,
     selected(entry) {
       return (
@@ -1139,9 +1129,7 @@ async function openAgentSettings() {
           remove.type = "button";
           remove.textContent = "删除";
           remove.setAttribute("aria-label", "删除技能 " + item.name);
-          remove.onclick = async () => {
-            if (!confirm("删除技能「" + item.name + "」？之后可以重新导入。"))
-              return;
+          remove.onclick = () => confirmDelete("删除技能「" + item.name + "」？之后可以重新导入。", async () => {
             try {
               await api("skills/delete", { name: item.name });
               await openAgentSettings();
@@ -1149,7 +1137,7 @@ async function openAgentSettings() {
             } catch (error) {
               $("skillStatus").textContent = error.message;
             }
-          };
+          });
           actions.append(download, remove);
           name.append(actions);
         }
@@ -1568,12 +1556,9 @@ async function ask(q, editIndex, editRefs, resume) {
     try {
       changed();
       await flush();
-      const externalApi = externalApis.get(session);
-      externalApis.delete(session);
       renderQuotes();
       const r = await streamChat(
         {
-          externalApi,
           doc: owner.id,
 
           mode: "chat",
@@ -2212,68 +2197,13 @@ async function setup() {
   $("closeHistory").onclick = () => $("historyDialog").close();
 
   $("attachContext").onclick = () => {
-    const refs = docs.flatMap((d) => [
-      ...(d.detachedSource ? [] : [{ id: d.id }]),
-      ...(d.outputs || []).flatMap((o) =>
-        outputKeys(o).map((file) => ({ id: d.id, version: o.version, file })),
-      ),
-    ]);
-    dialog(
-      "添加附件或引用",
-      (online
-        ? '<button type="button" id="chooseUpload" class="outline">上传本地文件</button><small> 图片、PDF、Word、Excel · 每个最多 20 MB</small><button type="button" id="attachExternalApi" class="outline">添加本次外部 API</button>'
-        : "") +
-        '<label for="contextFile">工作区文件</label><select id="contextFile" name="index">' +
-        refs
-          .map(
-            (ref, i) =>
-              '<option value="' +
-              i +
-              '">' +
-              esc(resolveFile(docs, ref).title) +
-              "</option>",
-          )
-          .join("") +
-        "</select>",
-      ({ index }) => {
-        const ref = refs[Number(index)];
-        if (!ref) return;
-        attachFile(ref);
-      },
-      "引用工作区文件",
-    );
-    if (online)
-      $("attachExternalApi").onclick = () => {
-        const session = currentComposer;
-        $("modal").close();
-        dialog(
-          "本次外部 API",
-          '<label for="externalBase">Base URL</label><input id="externalBase" name="base" type="url" placeholder="https://api.example.com/v1" required><label for="externalKey">API Key（Bearer）</label><input id="externalKey" name="key" type="password" autocomplete="off" required><small>仅供下一条消息调用此接口。可在提问中指定模型、接口路径和输出要求。</small>',
-          ({ base, key }) => {
-            if (!session) return;
-            externalApis.set(session, { base: base.trim(), key: key.trim() });
-            $("externalKey").value = "";
-            renderQuotes();
-          },
-          "添加",
-        );
-        $("modal").addEventListener(
-          "close",
-          () => {
-            if ($("externalKey")) $("externalKey").value = "";
-          },
-          { once: true },
-        );
-      };
-    if (online) $("chooseUpload").onclick = () => $("chatFiles").click();
+    if (online) $("chatFiles").click();
+    else toast("请在登录版写作助手中上传附件");
   };
-  $("chatFiles").onchange = (e) => {
-    const files = Array.from(e.target.files);
-    e.target.value = "";
-    if (files.length) {
-      if ($("modal").open) $("modal").close();
-      uploadFiles(files);
-    }
+  $("chatFiles").onchange = (event) => {
+    const files = Array.from(event.target.files);
+    event.target.value = "";
+    uploadFiles(files);
   };
   $("askForm").onsubmit = (e) => {
     e.preventDefault();

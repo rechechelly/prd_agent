@@ -64,6 +64,9 @@ export function agentInstructions({
   if (externalApi)
     instructions +=
       "\n用户已为本轮提供外部 API，bash 中的 TASK_API_BASE_URL 指向该服务的 Base URL，宿主已处理鉴权。用 curl 或 Python 向该变量拼接接口路径，无需传密钥。检查 HTTP 状态和响应类型；可按需下载响应中的 HTTPS 图片或解码返回的 base64，再嵌入当前文档。";
+  else
+    instructions +=
+      "\n用户在消息中要求调用外部 API 时，用 bash 中的 curl 或 Python 按用户提供的公网 HTTPS 地址、参数和鉴权方式发起请求，核对 HTTP 状态与返回内容。";
   instructions +=
     "\n给文档嵌入 HTML 原型截图时，直接使用已提供的 embed_view_screenshots。该工具由宿主运行浏览器，此操作无需安装 Playwright 或下载 Chromium。";
   return instructions;

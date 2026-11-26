@@ -89,6 +89,7 @@ export function renderDirectory({
   closed,
   selectDoc,
   selectFile,
+  quoteFile,
   createChild,
   remove,
   moved,
@@ -200,6 +201,7 @@ export function renderDirectory({
           entry.title = label.textContent = button.title = name;
           del.title = del.ariaLabel = "删除 " + name;
           plus.title = plus.ariaLabel = "在「" + name + "」下新建";
+          if (quote) quote.title = quote.ariaLabel = "引用到当前对话：" + name;
           renamed(entry);
         }
         if (focus) button.focus({ preventScroll: true });
@@ -238,21 +240,21 @@ export function renderDirectory({
       button.setAttribute("aria-expanded", String(expanded));
     if (entry.type === "doc" || entry.type === "folder")
       button.dataset.node = entry.item.id;
+    const ref =
+      entry.type === "doc"
+        ? { id: entry.item.id }
+        : entry.type === "file"
+          ? {
+              id: entry.doc.id,
+              version: entry.output.version,
+              file: entry.item,
+            }
+          : null;
     button.draggable = true;
     button.ondragstart = (event) => {
       previousClick = null;
       dragged = entry;
       event.dataTransfer.setData(itemTransfer, entry.key);
-      const ref =
-        entry.type === "doc"
-          ? { id: entry.item.id }
-          : entry.type === "file"
-            ? {
-                id: entry.doc.id,
-                version: entry.output.version,
-                file: entry.item,
-              }
-            : null;
       if (ref) event.dataTransfer.setData(contextTransfer, JSON.stringify(ref));
       event.dataTransfer.effectAllowed = ref ? "copyMove" : "move";
     };
@@ -297,6 +299,16 @@ export function renderDirectory({
     plus.innerHTML = icon("plus");
     plus.onclick = () => createChild(entry.key);
     item.append(button, plus, del);
+    let quote;
+    if (ref) {
+      quote = document.createElement("button");
+      quote.type = "button";
+      quote.className = "node-quote";
+      quote.title = quote.ariaLabel = "引用到当前对话：" + entry.title;
+      quote.innerHTML = icon("quote");
+      quote.onclick = () => quoteFile(ref);
+      item.append(quote);
+    }
     tree.append(item);
     acceptDrop(item, entry);
   }

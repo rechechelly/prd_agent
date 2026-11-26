@@ -187,8 +187,8 @@
                   <button
                     type="button"
                     id="attachContext"
-                    title="添加附件或引用"
-                    aria-label="添加附件或引用"
+                    title="上传附件（图片、PDF、Word、Excel，每个最多 20 MB）"
+                    aria-label="上传附件"
                   >
                     <i data-ico="clip"></i>
                   </button>
@@ -297,7 +297,7 @@
         <option value="deleteColumn">删除当前列</option>
       </select>
     </template>
-    <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+    <dialog id="settingsDialog" aria-labelledby="settingsTitle" closedby="any">
       <div class="historyHead">
         <h2 id="settingsTitle">工作区设置</h2>
         <button id="closeSettings" aria-label="关闭设置">×</button>
@@ -318,25 +318,37 @@
         <p id="skillStatus" role="status"></p>
       </section>
       <section id="modelPage" class="subpage" hidden>
-        <form id="modelForm">
-          <label>供应商<select id="providerChoice"></select></label>
-          <label>名称<input name="name" maxlength="100" required></label>
-          <label>Base URL<input name="base" type="url" required placeholder="https://api.example.com/v1"></label>
-          <label>API Key<input name="apiKey" type="password" autocomplete="new-password"></label>
-          <label>可用模型（每行一个）<textarea name="models" rows="5" required spellcheck="false"></textarea></label>
-          <div class="providerActions"><button type="button" id="discoverModels">获取模型列表</button><button type="button" id="testModel">测试首个模型</button><button type="button" id="removeProvider">删除供应商</button><button class="primary" type="submit">保存供应商</button></div>
+        <section id="providerDirectory" aria-labelledby="providerListTitle">
+          <div class="providerHeading">
+            <h3 id="providerListTitle">已配置的供应商</h3>
+            <button type="button" id="newProvider" class="primary">新增供应商</button>
+          </div>
+          <ul id="providerList" aria-label="已配置的供应商"></ul>
+          <p id="providerListStatus" role="status"></p>
+        </section>
+        <form id="modelForm" aria-labelledby="providerFormTitle" hidden>
+          <button type="button" id="backToProviders">← 供应商列表</button>
+          <h3 id="providerFormTitle"></h3>
+          <fieldset id="providerFields">
+            <label>供应商名称<input name="name" maxlength="100" required></label>
+            <label>Base URL<input name="base" type="url" required placeholder="https://api.example.com/v1"></label>
+            <label>API Key<input name="apiKey" type="password" autocomplete="new-password"></label>
+            <label>可用模型（每行一个）<textarea name="models" rows="4" required spellcheck="false"></textarea></label>
+            <div class="providerActions"><button type="button" class="outline" id="discoverModels">获取模型列表</button><button type="button" class="outline" id="testModel">测试首个模型</button></div>
+            <div class="providerFooter"><button type="button" id="removeProvider" class="danger">删除供应商</button><button class="primary" type="submit">保存供应商</button></div>
+          </fieldset>
           <p id="modelStatus" role="status"></p>
         </form>
       </section>
     </dialog>
-    <dialog id="historyDialog">
+    <dialog id="historyDialog" closedby="any">
       <div class="historyHead">
         <h2>历史会话</h2>
         <button id="closeHistory" aria-label="关闭历史会话">×</button>
       </div>
       <div id="historyList"></div>
     </dialog>
-    <dialog id="modal">
+    <dialog id="modal" aria-labelledby="modalTitle" closedby="any">
       <form method="dialog" id="modalForm">
         <h2 id="modalTitle"></h2>
         <div id="fields"></div>

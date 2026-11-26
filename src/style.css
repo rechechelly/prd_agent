@@ -1051,9 +1051,13 @@ dialog textarea {
 .tree-row .node {
   flex: 1;
   min-width: 0;
-  padding-right: 49px;
+  padding-right: 6px;
 }
+.tree-row:is(:hover, :focus-within) .node { padding-right: 49px; }
+.tree-row:has(.node-quote):is(:hover, :focus-within) .node { padding-right: 72px; }
+
 .node-add,
+.node-quote,
 .node-delete {
   position: absolute;
   right: 3px;
@@ -1063,9 +1067,11 @@ dialog textarea {
   color: #7a687a;
   opacity: 0;
 }
+.node-quote { right: 49px; }
 .node-add {
   right: 26px;
 }
+.tree-row:is(:hover, :focus-within) .node-quote,
 .tree-row:hover .node-add,
 .tree-row:focus-within .node-add,
 .node-add:focus-visible,
@@ -1078,6 +1084,7 @@ dialog textarea {
   color: #b43248;
   background: #f9e5eb;
 }
+.node-quote svg,
 .node-add svg,
 .node-delete svg {
   width: 15px;
@@ -1113,6 +1120,9 @@ button.danger:hover {
   color: white;
 }
 @media (hover: none) {
+  .tree-row .node { padding-right: 49px; }
+  .tree-row:has(.node-quote) .node { padding-right: 72px; }
+  .node-quote,
   .node-add,
   .node-delete {
     opacity: 1;
@@ -1170,6 +1180,7 @@ button.danger:hover {
 }
 .tree-row.renaming .node,
 .tree-row.renaming .node-add,
+.tree-row.renaming .node-quote,
 .tree-row.renaming .node-delete {
   display: none;
 }
@@ -1655,10 +1666,49 @@ button.danger:hover {
   display: block;
   margin: 8px 0;
 }
-#modelForm label input,
-#modelForm label select {
+#modelForm label input, #modelForm label textarea {
   display: block;
+  margin-top: 4px;
+  font-weight: 400;
 }
+.providerHeading, .providerFooter, .providerActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.providerHeading { justify-content: space-between; margin: 4px 0 14px; }
+.providerHeading h3, #providerFormTitle { font-size: 16px; margin: 0; }
+#providerList { list-style: none; margin: 0; padding: 0; }
+#providerList li + li { border-top: 1px solid var(--line); }
+#providerList button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 12px;
+  grid-template-areas: "name count arrow" "url count arrow";
+  align-items: center;
+  gap: 3px 12px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 8px;
+}
+#providerList strong { grid-area: name; font-size: 14px; overflow-wrap: anywhere; }
+#providerList small { grid-area: url; color: var(--muted); overflow-wrap: anywhere; }
+#providerList span { grid-area: count; color: var(--muted); white-space: nowrap; }
+#providerList button::after {
+  content: "";
+  grid-area: arrow;
+  height: 6px;
+  width: 6px;
+  border: solid var(--muted);
+  border-width: 1.5px 1.5px 0 0;
+  transform: rotate(45deg);
+}
+#backToProviders { color: var(--muted); margin: 0 0 8px; }
+#providerFields { border: 0; padding: 0; margin: 0; min-width: 0; }
+#modelForm textarea { height: auto; min-height: 6em; margin-bottom: 0; resize: vertical; font-family: monospace; }
+.providerFooter { justify-content: flex-end; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
+.providerFooter .danger { margin-right: auto; }
+#providerListStatus:empty, #modelStatus:empty { display: none; }
 #work .deliveryCommands {
   margin-left: auto;
 }
@@ -1862,5 +1912,3 @@ button.danger:hover {
 .modelOptions [aria-pressed=true] { color: var(--purple); background: var(--tint); }
 .modelOptions [aria-pressed=true]::after { content: " ✓"; }
 .manageProviders { border-top: 1px solid var(--line); }
-#modelForm textarea { width: 100%; resize: vertical; font-family: monospace; }
-.providerActions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }

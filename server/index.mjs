@@ -437,6 +437,9 @@ const server = http.createServer(async (req, res) => {
     }
     if ((p === "/api/agent" || p === "/api/agent/pause") && method === "POST") {
       const b = await body(req);
+      // Active clients describe external requests in chat. Paused pre-1.0.1 turns
+      // can still recover their original task-scoped credential from the bookmark.
+      delete b.externalApi;
       const w = JSON.parse(row()?.body || "{}"),
         doc = filesOf(w).find((d) => d.id === b.doc);
       if (!doc) fault("文档不存在", 404);
