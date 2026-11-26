@@ -1,32 +1,33 @@
 import { modelRoute } from "./models/routes.mjs";
 import { profiles, modelConfig } from "./models/providers.mjs";
 import { complete } from "./models/client.mjs";
-import { completionMessages } from "./agent/prompts.mjs";
-import { agentHistory } from "./agent-history.mjs";
-import { agentStream } from "./agent-stream.mjs";
+import { completionMessages } from "./models/completion.mjs";
+import { agentHistory, transcriptPath } from "./agent/history.mjs";
+import { agentStream } from "./agent/stream.mjs";
 import {
   installSkill,
   removeSkill,
   skillPackage,
   migrateWritingRule,
 } from "./skills.mjs";
-import { findDelivery as findOutput } from "../src/workspace-files.mjs";
+import { findDelivery as findOutput } from "../shared/workspace-files.mjs";
 import {
   createFileShare,
   lookupFileShare,
   updateFileShares,
 } from "./file-shares.mjs";
-import { imageAttachment, uploadAttachment } from "./attachments.mjs";
+import { imageAttachment, uploadAttachment } from "./attachments/attachments.mjs";
 import http from "node:http";
 import fs from "node:fs/promises";
-import { recordWorkspaceFiles } from "./delivery.mjs";
+import { recordWorkspaceFiles } from "./workspace/delivery.mjs";
 import { db, session, login, token, fault } from "./storage.mjs";
 import {
   generationRuns,
   pendingDelivery,
   acknowledgeDeliveries,
-} from "./generation-log.mjs";
-import { runAgent, pauseAgent, agentCatalog } from "./agent.mjs";
+} from "./workspace/generation-log.mjs";
+import { messageQueue } from "./agent/queue.mjs";
+import { runAgent, pauseAgent, agentCatalog } from "./agent/run.mjs";
 import { sharePage, loginPage } from "./pages.mjs";
 import { listComments, addComment, pruneComments } from "./prd-comments.mjs";
 import { serveStaticDelivery } from "./static-delivery.mjs";
@@ -435,7 +436,7 @@ const server = http.createServer(async (req, res) => {
           : file.id;
       return send(res, agentHistory(id, chatId, url.searchParams.get("tool")));
     }
-    if ((p === "/api/agent" || p === "/api/agent/pause") && method === "POST") {
+    if (["/api/agent", "/api/agent/pause", "/api/agent/queue"].includes(p) && method === "POST") {
       const b = await body(req);
       // Active clients describe external requests in chat. Paused pre-1.0.1 turns
       // can still recover their original task-scoped credential from the bookmark.
@@ -445,14 +446,18 @@ const server = http.createServer(async (req, res) => {
       if (!doc) fault("文档不存在", 404);
       if (p === "/api/agent" && !["chat", "complete"].includes(b.mode))
         fault("请通过 Agent 对话创建文件");
-      if (p === "/api/agent" && b.mode === "complete")
-        return send(res, {
-          text: await complete(
-            modelConfig("completion", b.modelId),
-            completionMessages(doc.title, b.before),
-            160,
-          ),
-        });
+      if (p === "/api/agent" && b.mode === "complete") {
+        const controller = new AbortController();
+        res.once("close", () => controller.abort());
+        const text = await complete(
+          modelConfig("completion", b.modelId),
+          completionMessages(doc.title, b),
+          1024,
+          controller.signal,
+        );
+        if (!res.destroyed) send(res, { text });
+        return;
+      }
       let target =
           doc.origin?.file === "prd"
             ? {
@@ -472,8 +477,23 @@ const server = http.createServer(async (req, res) => {
         };
       }
       const session = file.chatSessions?.find((s) => s.id === b.chatId);
+      if (!session && b.chatId === "legacy" && !file.chatSessions && p === "/api/agent/queue" && b.action === "list") return send(res, { items: [] });
       if (b.chatId !== undefined && !session)
         fault("会话不存在，请刷新工作区", 409);
+      if (p === "/api/agent/queue" || b.queued) {
+        if (!session) fault("会话不存在", 404);
+        const path = transcriptPath(target.id, session.id);
+        if (p === "/api/agent/queue") {
+          const { action, requestId, question, refs = [], modelId } = b;
+          if (action !== "list" && !/^[0-9a-f-]{36}$/i.test(requestId || "")) fault("消息编号无效");
+          if (action === "add" && (typeof question !== "string" || !question.trim() || !Array.isArray(refs))) fault("消息内容无效");
+          const item = action === "add" ? { requestId, question, refs, ...(modelId && { modelId }), createdAt: Date.now() } : { requestId };
+          return send(res, { items: await messageQueue(path, action, item) });
+        }
+        const [head] = await messageQueue(path);
+        if (!head || head.requestId !== b.requestId) fault("消息队列已更新", 409);
+        Object.assign(b, { question: head.question, refs: head.refs, modelId: head.modelId });
+      }
       if (p === "/api/agent/pause")
         return send(res, await pauseAgent(target.id, b.chatId, b.attemptId));
       if (

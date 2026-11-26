@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { fileKey, resolveFile } from "../../src/assistant-context.mjs";
-import { attachment, imageAttachment } from "../attachments.mjs";
+import { fileKey, resolveFile } from "../../shared/assistant-context.mjs";
+import { attachment, imageAttachment } from "../attachments/attachments.mjs";
 import { fault } from "../storage.mjs";
 export function maskImages(html, images = []) {
   return {

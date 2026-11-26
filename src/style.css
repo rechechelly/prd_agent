@@ -801,6 +801,16 @@ dialog textarea {
   box-shadow: 0 2px 10px #32284815;
   pointer-events: none;
 }
+#suggest { max-width: min(34rem, 90vw); }
+#suggest .completionBody {
+  max-height: min(35vh, 16rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+#suggest .completionBody > :first-child { margin-top: 0; }
+#suggest .completionBody > :last-child { margin-bottom: 0; }
+#suggest pre { white-space: pre-wrap; tab-size: 4; }
+#suggest small { display: block; margin-top: 5px; color: var(--muted); }
 .excalidraw button {
   padding: revert-layer;
 }
@@ -1912,3 +1922,17 @@ button.danger:hover {
 .modelOptions [aria-pressed=true] { color: var(--purple); background: var(--tint); }
 .modelOptions [aria-pressed=true]::after { content: " ✓"; }
 .manageProviders { border-top: 1px solid var(--line); }
+
+#messageQueue {
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #faf9fc;
+  font-size: 12px;
+}
+#messageQueue small { display: block; color: var(--muted); }
+#messageQueue ol { margin: 4px 0 0; padding-left: 1.5em; max-height: 16vh; overflow: auto; }
+#messageQueue li { padding: 3px 0; }
+#messageQueue li span { display: inline-block; width: calc(100% - 6em); vertical-align: middle; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#messageQueue button { color: var(--purple); font-size: inherit; padding: 3px 6px; }

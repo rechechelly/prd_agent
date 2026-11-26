@@ -2,13 +2,13 @@ import { createReadTool } from "@earendil-works/pi-durable/tools";
 import { defineTool } from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
 import path from "node:path";
-import { toolDescriptions } from "../../src/agent-catalog.mjs";
-import { drawCanvasTool } from "../canvas-tools.mjs";
+import { toolDescriptions } from "../../shared/agent-catalog.mjs";
+import { drawCanvasTool } from "../workspace/canvas-tools.mjs";
 import { renderDelivery } from "../render.mjs";
 import { discoverSkills } from "../skills.mjs";
-import { imageAttachment } from "../attachments.mjs";
-import { taskBash, readScratchFile } from "../task-environment.mjs";
-import { diagnostic } from "../agent-stream.mjs";
+import { imageAttachment } from "../attachments/attachments.mjs";
+import { taskBash, readScratchFile } from "../runtime/task-environment.mjs";
+import { diagnostic } from "./stream.mjs";
 const resourceReader = createReadTool();
 const readResource = {
   ...resourceReader,

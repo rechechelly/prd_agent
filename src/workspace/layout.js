@@ -1,4 +1,4 @@
-import { $ } from "./shared";
+import { $ } from "../shared";
 export function installLayout() {
   const layout = $("layout"),
     side = $("sidebar"),

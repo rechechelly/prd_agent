@@ -1,25 +1,27 @@
-import {initModels,setModels,selectedModel} from "./providers";
-import { readTurns, findTurn, tracePanel } from "./chat-trace";
-import { generatedFiles, boardType } from "./workspace-files.mjs";
-import { emptyHtml, sourceEdits, installHtmlSource } from "./html-source";
-import { installBlockTools } from "./block-tools";
-import { installDocumentOutline } from "./document-outline";
+import {initModels,setModels,selectedModel} from "./workspace/providers";
+import { documentCompletion } from "./editor/document-completion";
+import { queueState, syncQueue, renderQueue } from "./chat/chat-queue";
+import { readTurns, findTurn, tracePanel } from "./chat/chat-trace";
+import { generatedFiles, boardType } from "../shared/workspace-files.mjs";
+import { emptyHtml, sourceEdits, installHtmlSource } from "./workspace/html-source";
+import { installBlockTools } from "./editor/block-tools";
+import { installDocumentOutline } from "./editor/document-outline";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
-import { sceneVersion } from "./canvas-model.mjs";
-import { sessions, selectedSession, sessionName } from "./chat-sessions";
-import { toolDescriptions } from "./agent-catalog.mjs";
-import { planEdits, wireEdits } from "./edit-comparison";
-import deltaStyle from "./inline-review-style.txt";
-import { contextTransfer, fileKey, resolveFile } from "./assistant-context.mjs";
+import { sceneVersion } from "../shared/canvas-model.mjs";
+import { sessions, selectedSession, sessionName } from "./chat/chat-sessions";
+import { toolDescriptions } from "../shared/agent-catalog.mjs";
+import { planEdits, wireEdits } from "./editor/edit-comparison";
+import deltaStyle from "./editor/inline-review-style.txt";
+import { contextTransfer, fileKey, resolveFile } from "../shared/assistant-context.mjs";
 import {
   directoryIndex,
   outputKeys,
   fileLabel,
   renderDirectory,
-} from "./directory";
+} from "./workspace/directory";
 import { Editor } from "@tiptap/core";
 import { DOMSerializer, DOMParser as SchemaParser } from "@tiptap/pm/model";
-import { DocumentImage, readDocumentImage } from "./document-image";
+import { DocumentImage, readDocumentImage } from "./editor/document-image";
 import { closeHistory } from "@tiptap/pm/history";
 import { EditorState, NodeSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
@@ -33,11 +35,11 @@ import {
   proposedScene,
   currentImage,
   addIcon,
-} from "./board";
-import { openGenerationLog } from "./generation-log";
+} from "./workspace/board";
+import { openGenerationLog } from "./workspace/generation-log";
 import { $, esc, icon, decorate, dialog, confirmDelete, toast } from "./shared";
 import DOMPurify from "dompurify";
-import { installLayout } from "./layout";
+import { installLayout } from "./workspace/layout";
 import {
   api,
   boot,
@@ -46,7 +48,7 @@ import {
   online,
   streamChat,
 } from "./service";
-import { openDiscussion, stopReview } from "./review";
+import { openDiscussion, stopReview } from "./review/review";
 const folders = [
   { id: "product", title: "产品设计", parent: "" },
   { id: "research", title: "用户研究", parent: "product" },
@@ -92,10 +94,7 @@ let doc = docs[0],
   loadedDoc,
   page = "work",
   editor,
-  openAgent = innerWidth > 820,
-  suggestion = "",
-  timer,
-  composing = false;
+  openAgent = innerWidth > 820;
 let quoted = [],
   previewOriginal = false;
 const sending = new Map();
@@ -187,7 +186,7 @@ function renderQuotes() {
     area.append(note);
   }
   $("askForm").querySelector(".send").disabled =
-    !!pendingUploads.get(currentComposer) || sending.has(currentComposer);
+    !!pendingUploads.get(currentComposer);
   quoted.forEach((ref, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -538,7 +537,6 @@ function header() {
 }
 function show(p) {
   hideSuggestion();
-  composing = false;
   stopReview();
   if (page === "boardPage" && p !== page) {
     unmountBoard();
@@ -809,74 +807,15 @@ function migrateDirectory() {
   }
   return migrated;
 }
-let suggestionRequest = 0;
 let completionEnabled = true;
-function hideSuggestion() {
-  ++suggestionRequest;
-  clearTimeout(timer);
-  suggestion = "";
-  $("suggest").hidden = true;
-}
-function completion(text) {
-  if (/筛选|下拉/.test(text)) return "清空筛选条件后，列表恢复默认结果。";
-  if (/枚举|字段/.test(text)) return "逐项确认字段类型、业务含义和允许的取值。";
-  if (/备忘录/.test(doc.type)) return "下次讨论时确认负责人和后续动作。";
-  return "还需确认「" + doc.title + "」的空状态与验收条件。";
-}
-function queueSuggestion() {
-  hideSuggestion();
-  if (!completionEnabled || composing) return;
-  if (page !== "work" || !editor?.isFocused || !editor.state.selection.empty)
-    return;
-  const current = doc,
-    html = doc.html,
-    position = editor.state.selection.from;
-  const sameCursor = () =>
-    page === "work" &&
-    editor.isFocused &&
-    editor.state.selection.empty &&
-    doc.html === html &&
-    editor.state.selection.from === position;
-  timer = setTimeout(async () => {
-    if (current !== doc || !sameCursor() || composing) return;
-    const request = suggestionRequest,
-      before = editor.state.doc.textBetween(
-        Math.max(0, position - 2500),
-        position,
-        " ",
-      ),
-      r = editor.view.coordsAtPos(position);
-    let next;
-    try {
-      if (online) await flush();
-      if (!completionEnabled || request !== suggestionRequest) return;
-      next = online
-        ? (await api("agent", { mode: "complete", modelId: selectedModel("completion"), doc: current.id, before }))
-            .text
-        : completion(before);
-    } catch {
-      return;
-    }
-    if (
-      !next ||
-      request !== suggestionRequest ||
-      current !== doc ||
-      !sameCursor() ||
-      composing
-    )
-      return;
-    suggestion = next;
-    const el = $("suggest");
-    el.textContent = suggestion + "　Tab 采纳";
-    el.hidden = false;
-    el.style.left =
-      Math.min(
-        Math.max(5, r.left),
-        Math.max(5, innerWidth - el.offsetWidth - 8),
-      ) + "px";
-    el.style.top = Math.min(innerHeight - 50, r.bottom + 4) + "px";
-  }, 550);
-}
+const completion = documentCompletion({
+  getEditor: () => editor,
+  getDocument: () => doc,
+  enabled: () => completionEnabled && page === "work" && doc?.type === "文档" && !$("editor").hidden,
+  popup: $("suggest"),
+  scrollport: $("paperScroll"),
+});
+const hideSuggestion = completion.clear;
 async function addImage(file) {
   const target = doc,
     view = editor.view;
@@ -1166,7 +1105,7 @@ const transcripts = new WeakMap();
 function loadTranscript(file, session) {
   const state = { turns: transcripts.get(session)?.turns || [] };
   transcripts.set(session, state);
-  state.promise = readTurns(file, session)
+  state.promise = flush().then(() => readTurns(file, session))
     .then((turns) => {
       if (transcripts.get(session) !== state) return;
       state.turns = turns;
@@ -1225,6 +1164,19 @@ function chat(focusIndex) {
   messages.push(...failures);
   messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   if (pending) messages.push(pending);
+  if (online) {
+    const state = queueState(session);
+    const blocked = hasProposal(session);
+    renderQueue(session, pending, blocked, item => prioritize(file, session, item));
+    if (!state.initialized) {
+      state.initialized = true;
+      state.stopped = !!session.pausedQuestion;
+      syncQueue(file, session, "list").then(() => {
+        refreshChat(file, session);
+        drainQueue(file, session);
+      }).catch(error => toast(error.message));
+    } else if (!blocked) queueMicrotask(() => drainQueue(file, session));
+  }
   renderTabs(file, session);
   if (!messages.length) {
     area.innerHTML =
@@ -1309,10 +1261,8 @@ function chat(focusIndex) {
         }
       };
       pause.onclick = () => {
-        if (pending.pausing) return;
-        pending.pausing = true;
-        updateChatProgress(pending);
-        if (pending.canPause) pending.sendPause();
+        queueState(session).stopped = true;
+        interrupt(pending);
       };
       pending.pauseButton = pause;
       question.append(pause);
@@ -1468,35 +1418,88 @@ function chat(focusIndex) {
     area.append(failure);
   }
   $("askForm").querySelector(".send").disabled =
-    sending.has(session) || !!pendingUploads.get(session);
+    !!pendingUploads.get(session);
   if (page === "boardPage") {
     $("agentReview").hidden = true;
     updateBoard();
   } else reviewDraft(focusIndex);
   if (messages.length) area.scrollTop = area.scrollHeight;
 }
+function refreshChat(file, session) {
+  if (chatTarget() === file && selectedSession(file) === session) chat();
+}
+function hasProposal(session) {
+  return session.messages.some(m => (typeof m.proposed === "string" || m.canvasPatch) && !m.resolved);
+}
+function interrupt(pending) {
+  if (pending.pausing || pending.ending) return;
+  pending.pausing = true;
+  updateChatProgress(pending);
+  if (pending.canPause) pending.sendPause();
+}
+async function prioritize(file, session, item) {
+  const state = queueState(session);
+  if (state.promoting) return;
+  state.promoting = true;
+  const current = sending.get(session);
+  refreshChat(file, session);
+  try {
+    await current?.admission;
+    await syncQueue(file, session, "prioritize", { requestId: item.requestId });
+    state.stopped = false;
+    if (current && sending.get(session) === current) interrupt(current);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    state.promoting = false;
+    refreshChat(file, session);
+    drainQueue(file, session);
+  }
+}
+function drainQueue(file, session) {
+  const state = queueState(session);
+  if (sending.has(session) || state.loading || state.promoting || state.stopped ||
+      !state.items.length || hasProposal(session) || (!docs.includes(file) && !folders.includes(file))) return;
+  const item = state.items[0];
+  runQuestion(file, session, item.question, undefined, item.refs, undefined, item);
+}
 async function ask(q, editIndex, editRefs, resume) {
   if (!doc || !q.trim()) return;
-  if (doc.type === "交互 HTML" && !online)
-    return toast("请在登录版工作台使用 HTML 助手");
-  if (boardType(doc.type) && !online)
-    return toast("画布助手需要登录服务版工作台");
-  const modelId = selectedModel("agent");
-  const target = chatTarget(),
-    session = selectedSession(target),
-    owner = doc,
-    base = targetContent(target);
-  if (sending.has(session)) return;
+  const file = chatTarget(), session = selectedSession(file);
   if (pendingUploads.get(session)) return toast("附件解析完成后即可发送");
-  if (online) {
-    await transcripts.get(session)?.promise;
-    if (
-      sending.has(session) ||
-      target !== chatTarget() ||
-      session !== selectedSession(target)
-    )
-      return;
+  if (!online || editIndex !== undefined || resume) {
+    if (sending.has(session)) return;
+    if (resume) queueState(session).stopped = false;
+    return runQuestion(file, session, q, editIndex, editRefs, resume);
   }
+  const state = queueState(session);
+  const refs = (editRefs || quoted).map(r => r.kind === "file" ? { ...r, title: referenceLabel(r) } : { ...r });
+  if (!sending.has(session)) state.stopped = false;
+  const item = { question: q, requestId: crypto.randomUUID(), refs, modelId: selectedModel("agent") };
+  if (!editRefs) {
+    if ($("question").value.trim() === q.trim()) $("question").value = "";
+    quoted = [];
+    renderQuotes();
+  }
+  try {
+    changed();
+    await syncQueue(file, session, "add", item);
+  } catch (error) {
+    // Keep a rejected submission accessible even if another draft was typed.
+    (session.failedAttempts ||= []).push({ q, refsUsed: refs, createdAt: Date.now(), requestId: item.requestId, failure: error.message });
+    changed();
+    toast(error.message);
+  }
+  refreshChat(file, session);
+  drainQueue(file, session);
+}
+async function runQuestion(owner, session, q, editIndex, editRefs, resume, queued) {
+  if (owner.type === "交互 HTML" && !online)
+    return toast("请在登录版工作台使用 HTML 助手");
+  if (boardType(owner.type) && !online)
+    return toast("画布助手需要登录服务版工作台");
+  const modelId = queued?.modelId || selectedModel("agent");
+  const target = owner, base = targetContent(target);
   const pausedTurn = transcripts
     .get(session)
     ?.turns.findLast((t) => t.control === "paused");
@@ -1522,9 +1525,9 @@ async function ask(q, editIndex, editRefs, resume) {
     q,
     refsUsed: refs,
     createdAt: resume?.createdAt || Date.now(),
-    requestId: resume?.requestId || crypto.randomUUID(),
+    requestId: queued?.requestId || resume?.requestId || crypto.randomUUID(),
   };
-  const sentFromComposer = !resume && $("question").value.trim() === q.trim();
+  const sentFromComposer = !queued && !resume && $("question").value.trim() === q.trim();
   if (sentFromComposer) $("question").value = "";
   if (sentFromComposer || (editIndex === undefined && editRefs === undefined)) {
     quoted = [];
@@ -1549,11 +1552,17 @@ async function ask(q, editIndex, editRefs, resume) {
       label: "正在保存当前文档",
       partial: "",
     };
+    let admit;
+    pending.admission = new Promise(resolve => { admit = resolve; });
     sending.set(session, pending);
     delete session.lastAgentFailure;
     const timer = setInterval(() => updateChatProgress(pending), 1000);
-    chat();
+    refreshChat(owner, session);
     try {
+      await transcripts.get(session)?.promise;
+      const bookmark = transcripts.get(session)?.turns.findLast(t => t.control === "paused");
+      pending.resumeFrom = bookmark?.requestId;
+      if (bookmark) editIndex = pending.editIndex = bookmark.editIndex;
       changed();
       await flush();
       renderQuotes();
@@ -1567,6 +1576,7 @@ async function ask(q, editIndex, editRefs, resume) {
           refs,
           chatId: session.id,
           requestId: msg.requestId,
+          queued: !!queued,
           attemptId: pending.attemptId,
           resumeFrom: pending.resumeFrom,
           editIndex,
@@ -1575,6 +1585,7 @@ async function ask(q, editIndex, editRefs, resume) {
         (event) => {
           if (event.canPause && !pending.canPause) {
             pending.canPause = true;
+            admit();
             if (pending.pausing) pending.sendPause();
           }
           pending.label = event.label;
@@ -1620,15 +1631,22 @@ async function ask(q, editIndex, editRefs, resume) {
       }
     } catch (e) {
       const error = pending.controller.signal.reason?.message || e.message;
-      (session.failedAttempts ||= []).push({ ...msg, failure: error });
+      queueState(session).stopped = true;
+      if (!queued || pending.canPause) (session.failedAttempts ||= []).push({ ...msg, failure: error });
+      else session.lastAgentFailure = error;
       session.updatedAt = Date.now();
       changed();
       toast(error);
     } finally {
+      pending.ending = true;
+      admit();
       clearInterval(timer);
-      sending.delete(session);
       await loadTranscript(owner, session);
-      if (doc && selectedSession(chatTarget()) === session) chat();
+      try { await syncQueue(owner, session, "list"); }
+      catch (error) { queueState(session).stopped = true; toast(error.message); }
+      sending.delete(session);
+      refreshChat(owner, session);
+      drainQueue(owner, session);
     }
     return;
   }
@@ -1925,22 +1943,7 @@ async function setup() {
           );
           return true;
         }
-        if (
-          completionEnabled &&
-          !e.isComposing &&
-          e.key === "Tab" &&
-          suggestion &&
-          !e.shiftKey
-        ) {
-          e.preventDefault();
-          const text = suggestion;
-          hideSuggestion();
-          editor.commands.insertContent(text);
-          hideSuggestion();
-          return true;
-        }
-        if (e.key === "Escape" || e.key.startsWith("Arrow")) hideSuggestion();
-        return false;
+        return completion.handleKey(view, e);
       },
     },
     onUpdate: () => {
@@ -1949,22 +1952,20 @@ async function setup() {
       changed();
       reviewDraft();
       header();
-      queueSuggestion();
+      completion.request();
     },
     onBlur: hideSuggestion,
   });
   installBlockTools(editor, () => $("file").click());
   installDocumentOutline(editor.view.dom);
   editor.view.dom.addEventListener("compositionstart", () => {
-    composing = true;
-    hideSuggestion();
+    completion.composition(true);
   });
   editor.view.dom.addEventListener("compositionend", () => {
-    composing = false;
-    queueSuggestion();
+    completion.composition(false);
   });
   editor.view.dom.addEventListener("pointerdown", hideSuggestion);
-  $("paperScroll").onscroll = hideSuggestion;
+  $("paperScroll").addEventListener("scroll", completion.reposition, { passive: true });
   writeSource = installHtmlSource((value) => {
     if (doc?.type !== "交互 HTML") return;
     doc.html = value;
@@ -2209,7 +2210,7 @@ async function setup() {
     e.preventDefault();
     ask($("question").value.trim());
   };
-  editor.on("selectionUpdate", hideSuggestion);
+  editor.on("selectionUpdate", completion.selectionChanged);
   $("file").onchange = (e) => {
     addImage(e.target.files[0]);
     e.target.value = "";

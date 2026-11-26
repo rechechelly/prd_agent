@@ -4,7 +4,7 @@ import net from "node:net";
 import { lookup } from "node:dns/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { fault } from "./storage.mjs";
+import { fault } from "../storage.mjs";
 
 const privateRanges = new net.BlockList();
 for (const [ip, bits] of [

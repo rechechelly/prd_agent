@@ -1,22 +1,22 @@
-import { maskImages, prepareReferences } from "./agent/context.mjs";
-import { conversationFor } from "./agent/conversation.mjs";
-import { createAgentTools, toolReply } from "./agent/tools.mjs";
-import { runtimeModels } from "./agent/model.mjs";
-import { loopPolicy, CompactionBoundary } from "./agent/policy.mjs";
+import { maskImages, prepareReferences } from "./context.mjs";
+import { conversationFor } from "./conversation.mjs";
+import { createAgentTools, toolReply } from "./tools.mjs";
+import { runtimeModels } from "./model.mjs";
+import { loopPolicy, CompactionBoundary } from "./policy.mjs";
 import {
   agentInstructions,
   agentInput,
   continuationInput,
   continueProse,
   correctToolResult,
-} from "./agent/prompts.mjs";
-export { agentCatalog } from "./agent/tools.mjs";
-import { pausedRequest, pauseKind, transcriptPath } from "./agent-history.mjs";
-import { diagnostic } from "./agent-stream.mjs";
-import { workspaceCreation } from "./create-file.mjs";
-import { discoverSkills, skillRuntime } from "./skills.mjs";
-import { boardType } from "../src/workspace-files.mjs";
-import { sceneVersion } from "../src/canvas-model.mjs";
+} from "./prompts.mjs";
+export { agentCatalog } from "./tools.mjs";
+import { pausedRequest, pauseKind, transcriptPath } from "./history.mjs";
+import { diagnostic } from "./stream.mjs";
+import { workspaceCreation } from "../workspace/create-file.mjs";
+import { discoverSkills, skillRuntime } from "../skills.mjs";
+import { boardType } from "../../shared/workspace-files.mjs";
+import { sceneVersion } from "../../shared/canvas-model.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -24,12 +24,11 @@ import {
   createStage,
   taskEnvironment,
   readScratchFile,
-} from "./task-environment.mjs";
-import { openTaskNetwork } from "./task-network.mjs";
+} from "../runtime/task-environment.mjs";
+import { openTaskNetwork } from "../runtime/task-network.mjs";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 import { obj, str, opt } from "@earendil-works/pi-schema";
 import {
-  Harness,
   AssistantEntry,
   createRegistry,
   defineExtension,
@@ -39,9 +38,9 @@ import {
   hook,
   hookTask,
 } from "@earendil-works/pi-durable";
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import { resolveFile } from "../src/assistant-context.mjs";
-import { directory, fault, seal, unseal } from "./storage.mjs";
+import { openChatHarness, closeChatHarness, consumeQueued } from "./queue.mjs";
+import { resolveFile } from "../../shared/assistant-context.mjs";
+import { directory, fault, seal, unseal } from "../storage.mjs";
 const active = new Map();
 const validId = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
 const paused = Symbol("paused");
@@ -305,15 +304,14 @@ export async function runAgent(
       ],
     });
     registry.install(ext);
-    h = await Harness.open(
-      await openNodeSqliteStorage(identity),
+    h = await openChatHarness(
+      identity,
       {
         models,
         registry,
         env: () => env,
         settings: loopPolicy.settings,
       },
-      ctx,
     );
     const ownership = { ownership: { kind: "ownerless" } };
     let root = bookmark
@@ -515,11 +513,12 @@ export async function runAgent(
           requestId: attemptId === requestId ? randomUUID() : attemptId,
         }
       : { type: "input", content, requestId };
-    const sub = bookmark
+    const sub = bookmark || req.queued
       ? await h.submission(
           await root.commit(async (tx) => {
+            if (req.queued) await consumeQueued(tx, requestId);
             const id = await root.submit(tx, input);
-            await tx.appendEntry(root.id, {
+            if (bookmark) await tx.appendEntry(root.id, {
               kind: pauseKind,
               data: {
                 requestId: bookmark.requestId,
@@ -720,7 +719,7 @@ export async function runAgent(
     return { status: "paused", requestId };
   } finally {
     try {
-      await h?.close(ctx);
+      if (h) await closeChatHarness(identity, h);
     } finally {
       network?.close();
       active.delete(identity);

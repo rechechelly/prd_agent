@@ -1,6 +1,6 @@
 import { fork } from "node:child_process";
 import { createHash } from "node:crypto";
-import { db, fault } from "./storage.mjs";
+import { db, fault } from "../storage.mjs";
 
 db.exec(
   "CREATE TABLE IF NOT EXISTS chat_attachments(id TEXT PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL)",

@@ -1,6 +1,6 @@
 import { editedTable } from "./table-edit";
 import DOMPurify from "dompurify";
-import { $, dialog, toast } from "./shared";
+import { $, dialog, toast } from "../shared";
 import { readDocumentImage } from "./document-image";
 
 // Edit the original HTML in place so generated layout, anchors and figure captions survive.

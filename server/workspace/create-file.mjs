@@ -5,7 +5,7 @@ import {
   describeCanvas,
   sceneVersion,
   validateDrawing,
-} from "../src/canvas-model.mjs";
+} from "../../shared/canvas-model.mjs";
 
 const types = {
   folder: "文件夹",

@@ -1,12 +1,12 @@
 import { fault } from "../storage.mjs";
 
-export async function complete(p, messages, max_tokens = 100) {
+export async function complete(p, messages, max_tokens = 100, signal) {
   let r;
   try {
     r = await fetch(p.base + "/chat/completions", {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(30000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       headers: {
         "content-type": "application/json",
         authorization: "Bearer " + p.secret,

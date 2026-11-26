@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db } from "./storage.mjs";
+import { db } from "../storage.mjs";
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS generation_runs (

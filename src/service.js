@@ -1,12 +1,13 @@
 import { $, toast } from "./shared";
 export const online =
   location.protocol === "http:" || location.protocol === "https:";
-export async function api(path, body) {
+export async function api(path, body, signal) {
   const res = await fetch(
     "./api/" + path,
     body === undefined
       ? {}
       : {
+          signal,
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),

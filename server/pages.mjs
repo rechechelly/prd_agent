@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { createPrdDiscussion } from "../src/prd-discussion.mjs";
+import { createPrdDiscussion } from "../src/review/prd-discussion.mjs";
 const discussionStyle = readFileSync(
-  new URL("../src/prd-discussion.css", import.meta.url),
+  new URL("../src/review/prd-discussion.css", import.meta.url),
   "utf8",
 );
 const baseStyle = `*{box-sizing:border-box}body{margin:0;background:#f6f5fa;color:#302d3b;font:15px/1.65 "PingFang SC",system-ui,sans-serif}button,input,textarea{font:inherit}button{cursor:pointer;border:1px solid #d5d1e0;border-radius:7px;background:white;padding:7px 13px}button.active,button[type=submit]{background:#6654bf;color:white}input,textarea{border:1px solid #ccc6da;border-radius:6px;padding:9px;max-width:100%}h1{font-size:23px;margin:0}p{margin:8px 0}.login{max-width:410px;margin:15vh auto;padding:32px;background:white;border:1px solid #e3dfea;border-radius:15px}.login label,.login button{display:block;margin:14px 0}.login input[type=text],.login input[type=password]{display:block;width:100%;margin-top:4px}header{padding:12px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;gap:12px;background:white}.review{display:grid;grid-template-columns:minmax(0,1fr) 300px;height:calc(100dvh - 67px)}iframe{border:0;width:100%;height:100%;background:white}aside{border-left:1px solid #ddd;padding:15px;overflow:auto}aside textarea,aside input{width:100%;margin:4px 0}#thread p{border-bottom:1px solid #ddd;padding-bottom:8px;white-space:pre-wrap;overflow-wrap:anywhere}#err{color:#a52d37}@media(max-width:760px){header{flex-wrap:wrap}.review{display:block;height:auto}iframe{height:66dvh}.login{margin:12vh 16px}}`;

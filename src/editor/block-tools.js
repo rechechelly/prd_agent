@@ -9,7 +9,7 @@ import {
 import { closeHistory } from "@tiptap/pm/history";
 import { NodeRange } from "@tiptap/pm/model";
 import { liftTarget } from "@tiptap/pm/transform";
-import { dialog, icon } from "./shared";
+import { dialog, icon } from "../shared";
 import { installBlockSelection } from "./block-selection";
 import { installTextToolbar } from "./text-toolbar";
 

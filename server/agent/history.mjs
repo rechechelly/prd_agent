@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { directory, fault } from "./storage.mjs";
+import { directory, fault } from "../storage.mjs";
 
 export function transcriptPath(docId, sessionId) {
   const key =

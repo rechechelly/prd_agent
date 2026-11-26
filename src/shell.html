@@ -45,7 +45,7 @@
                 type="button"
                 aria-label="AI 文档补全"
                 aria-pressed="true"
-                title="开启或关闭 AI 文档补全"
+                title="AI 文档补全 · Tab 采纳，快速按两次 Tab 生成或换一版"
               >
                 AI 补全
               </button>
@@ -143,6 +143,7 @@
                 ><button type="button" id="adoptAgentEdit">全部 Keep</button
                 ><button type="button" id="discardAgentEdit">全部 Undo</button>
               </div>
+              <section id="messageQueue" aria-label="待发送消息" hidden></section>
               <form id="askForm">
                 <input id="chatFiles" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx" multiple hidden />
                 <div id="references"></div>
@@ -365,7 +366,7 @@
       hidden
     />
     <div id="toast" role="status" hidden></div>
-    <div id="suggest" hidden></div>
+    <div id="suggest" role="status" hidden></div>
     <script>
       /* APP_JS */
     </script>

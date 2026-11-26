@@ -1,5 +1,5 @@
-import { boardType } from "../../src/workspace-files.mjs";
-import { describeCanvas } from "../../src/canvas-model.mjs";
+import { boardType } from "../../shared/workspace-files.mjs";
+import { describeCanvas } from "../../shared/canvas-model.mjs";
 function fileContext(doc, docs, ownerId, html) {
   const byId = new Map(docs.map((node) => [node.id, node]));
   const owner = byId.get(ownerId) || doc;
@@ -131,13 +131,3 @@ export const correctToolResult =
   "检查刚才的工具结果和用户实际要求。要创建文件，调用 write_file；要更新当前文档，调用 edit_file；其他失败操作请先读取当前状态，修正参数或使用可用工具重试。确实缺少用户输入时说明缺少什么。";
 export const continueProse =
   "上一条答复因单次输出上限截断。从末尾直接接着写，不要重述已输出的内容。";
-
-export function completionMessages(title, before) {
-  return [
-    {
-      role: "system",
-      content: "你为产品经理续写中文文档。只返回光标后的一句新文本，避免重复。",
-    },
-    { role: "user", content: title + "\n" + String(before || "").slice(-3500) },
-  ];
-}

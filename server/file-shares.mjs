@@ -2,9 +2,9 @@ import {
   findDelivery,
   boardType,
   folderListing,
-} from "../src/workspace-files.mjs";
+} from "../shared/workspace-files.mjs";
 import { db, token, fault } from "./storage.mjs";
-import { fileLabel } from "../src/assistant-context.mjs";
+import { fileLabel } from "../shared/assistant-context.mjs";
 
 db.exec(`CREATE TABLE IF NOT EXISTS file_shares (
   token TEXT PRIMARY KEY, doc TEXT NOT NULL, version INTEGER NOT NULL, file TEXT NOT NULL,

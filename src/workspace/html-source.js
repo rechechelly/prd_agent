@@ -1,5 +1,5 @@
 import { diffArrays } from "diff";
-import { $, esc } from "./shared";
+import { $, esc } from "../shared";
 
 export const emptyHtml = (title) => `<!doctype html>
 <html lang="zh-CN">

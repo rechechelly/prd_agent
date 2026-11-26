@@ -1,7 +1,7 @@
 import { defineTool } from "@earendil-works/pi-durable";
 import { arr, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
-import { validateDrawing } from "../src/canvas-model.mjs";
-import { boardType } from "../src/workspace-files.mjs";
+import { validateDrawing } from "../../shared/canvas-model.mjs";
+import { boardType } from "../../shared/workspace-files.mjs";
 export function drawCanvasTool(workspace) {
   const reply = (text, isError = false) => ({
     output: [{ type: "text", text }],

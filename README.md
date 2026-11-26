@@ -10,7 +10,6 @@
 npm ci
 npm ci --prefix server
 npm run build
-npm test
 npm start
 ```
 
@@ -31,29 +30,33 @@ npm start
 
 ## 在工作台中工作
 
-- **文档**支持图文、表格、标题目录、行级工具栏、划词与框选格式化。打开 AI 补全后，在文档中输入可得到续写建议。
+- **文档**支持图文、表格、标题目录、行级工具栏、划词与框选格式化。打开 AI 补全后，输入会触发 Markdown 续写建议。快速连按两次 Tab 可在光标处立即生成或换一版，单按 Tab 采纳，Esc 关闭。标题、列表和代码块按文档格式插入。
 - **HTML** 是单文件原型。Raw Text 编辑源码并展示 Agent 提议的差异，渲染模式预览修改效果。可以逐处保留或放弃修改。
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
-- **Agent 对话**默认携带当前文件上下文，可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。处理过程中可以暂停，在同一会话中继续。
+- **Agent 对话**默认携带当前文件上下文，可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
 - **技能**在「工作区设置 → Agent 工具与技能」管理。仓库附带可替换的 `prd-writing` 技能，指导 Agent 交付可交互 HTML 和图文 PRD。用户可导入其他技能包。
 
 ## 代码结构和二次开发
 
+前端从 `src/main.js` 启动。文档编辑与补全在 `src/editor/`，对话在 `src/chat/`，文件目录、画布和供应商界面在 `src/workspace/`，分享评审在 `src/review/`。前后端共用的文件类型、引用和画布模型在 `shared/`。
+
+服务端从 `server/index.mjs` 启动。Agent 循环、队列和历史在 `server/agent/`，模型请求在 `server/models/`，文件生成和修改在 `server/workspace/`，附件解析在 `server/attachments/`，任务环境和网络代理在 `server/runtime/`。
+
 | 需要修改的行为 | 入口 |
 | --- | --- |
 | Agent 系统指令、文件上下文、用户消息、错误纠正和截断续写提示 | [server/agent/prompts.mjs](server/agent/prompts.mjs) 中的 `agentInstructions`、`agentInput`、`continuationInput` |
-| 文档行内补全提示 | 同一模块的 `completionMessages`，调用端在 [src/main.js](src/main.js) |
-| 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent.mjs](server/agent.mjs) 的 `runAgent` |
+| 文档行内补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages`，调用端在 [src/editor/document-completion.js](src/editor/document-completion.js) |
+| 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent/run.mjs](server/agent/run.mjs) 的 `runAgent` |
 | 模型协议、上下文窗口、输出 token 和供应商适配 | [server/agent/model.mjs](server/agent/model.mjs)；普通补全和模型发现在 [server/models/client.mjs](server/models/client.mjs) |
-| 工具清单、参数与执行 | [src/agent-catalog.mjs](src/agent-catalog.mjs) 的描述和 [server/agent/tools.mjs](server/agent/tools.mjs) 的注册。文件与画布操作分别见 `server/create-file.mjs`、`server/canvas-tools.mjs` |
+| 工具清单、参数与执行 | [shared/agent-catalog.mjs](shared/agent-catalog.mjs) 的描述和 [server/agent/tools.mjs](server/agent/tools.mjs) 的注册。文件与画布操作分别见 `server/workspace/create-file.mjs`、`server/workspace/canvas-tools.mjs` |
 | 技能发现、导入、按需加载 | [server/skills.mjs](server/skills.mjs)、[skills/prd-writing/SKILL.md](skills/prd-writing/SKILL.md) |
-| 图片、附件和临时任务目录 | `server/agent/context.mjs`、`server/attachment-parser.mjs`、`server/task-environment.mjs` |
-| 会话续接、持久化记录和流式展示 | `server/agent/conversation.mjs`、`server/agent-history.mjs`、`server/agent-stream.mjs`、`src/chat-trace.js` |
-| 供应商存储、选择与管理界面 | `server/models/providers.mjs`、`server/models/routes.mjs`、`src/providers.js` |
+| 图片、附件和临时任务目录 | `server/agent/context.mjs`、`server/attachments/attachment-parser.mjs`、`server/runtime/task-environment.mjs` |
+| 会话续接、持久化记录和流式展示 | `server/agent/queue.mjs`、`src/chat/chat-queue.js`、`server/agent/conversation.mjs`、`server/agent/history.mjs`、`server/agent/stream.mjs`、`src/chat/chat-trace.js` |
+| 供应商存储、选择与管理界面 | `server/models/providers.mjs`、`server/models/routes.mjs`、`src/workspace/providers.js` |
 | HTTP 入口、登录和工作区版本 | `server/index.mjs`、`server/storage.mjs`、`src/service.js` |
-| 编辑器、HTML、画布和工作区布局 | `src/main.js`、`src/html-source.js`、`src/board.js`、`src/shell.html`、`src/style.css` |
+| 编辑器、HTML、画布和工作区布局 | `src/main.js`、`src/workspace/html-source.js`、`src/workspace/board.js`、`src/shell.html`、`src/style.css` |
 
-**修改循环。** Pi 的 `maxTurns` 默认为 `null`，工具串行执行，启用原生重试与上下文压缩。应用另有针对错误工具结果、纯文本截断和无进展续写的限制。需要改变这些行为时，先调整 `loopPolicy`，再用 `server/tests/agent-continuation.test.mjs` 中的模拟流验证中断、恢复与重复写入。一次输出被截断与上下文总窗口溢出走不同的处理路径。
+**修改循环。** Pi 的 `maxTurns` 默认为 `null`，工具串行执行，启用原生重试与上下文压缩。应用另有针对错误工具结果、纯文本截断和无进展续写的限制。循环策略集中在 `loopPolicy`。一次输出被截断与上下文总窗口溢出走不同的处理路径。
 
 **增加工具。** 将模型可读的用途加入 `toolDescriptions`，在 `createAgentTools` 中声明 schema 并实现执行结果。文件修改通过现有工作区文件接口登记，确保预览、审阅和目标路径一致。工具错误通过 Pi 的工具结果反馈给模型。当前工具包括 `list_file`、`read_file`、`write_file`、`edit_file`、`draw_canvas`、`bash`、`skill_load`、`read_resource`、`embed_view_screenshots` 和 `compact_context`。最后一项由应用封装，调用 Pi 原生压缩机制。Bash 工具在任务专属目录内执行。
 
@@ -72,6 +75,7 @@ npm start
 | POST `api/providers/discover`、`api/providers/test` | `{id?,base,apiKey?}`，测试另传 `model`。分别返回模型名称列表或连通结果 |
 | POST `api/providers/delete`、`api/models/switch` | 删除使用供应商 `id`；选择使用模型记录 `id` 和 `scope: "agent" / "completion"` |
 | POST `api/agent` | `{mode:"chat",doc,chatId?,question,modelId?}` 或 `{mode:"complete",doc,before,modelId?}`。聊天可通过 Accept `application/x-ndjson` 接收 progress、result、error |
+| POST `api/agent/queue` | 按 `doc`、`chatId` 获取队列（`list`）、追加消息（`add`）或将指定 `requestId` 移至队首（`prioritize`）。队列保存在 Pi Durable 会话文档中，出队与提交用户输入共用一次事务。 |
 | POST `api/agent/pause`、GET `api/agent/history` | 以 `doc` 和 `chatId` 定位会话，暂停携带对应 `attemptId`，历史支持通过 `tool` 查询工具明细 |
 | GET `api/agent-catalog`、POST `api/skills/import`、POST `api/skills/delete`、GET `api/skills/export` | 工具与技能目录、技能包导入导出 |
 | POST `api/attachments?name=…` | 上传附件字节，单文件上限 20 MB |
@@ -79,4 +83,4 @@ npm start
 
 ## 版本与许可证
 
-开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `1.0.1`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。
+开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v1.0.2`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。

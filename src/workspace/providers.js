@@ -1,5 +1,5 @@
-import { $, confirmDelete, toast } from "./shared";
-import { api, online } from "./service";
+import { $, confirmDelete, toast } from "../shared";
+import { api, online } from "../service";
 
 let catalog = { providers: [], selections: { agent: null, completion: null } };
 const controls = { agent: "agentModel", completion: "completionModel" };

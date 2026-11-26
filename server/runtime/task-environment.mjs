@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { directory } from "./storage.mjs";
+import { directory } from "../storage.mjs";
 import { fileURLToPath } from "node:url";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { FileError, ok, err } from "@earendil-works/pi-durable/env";

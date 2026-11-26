@@ -1,5 +1,5 @@
-import { $, dialog, esc } from "./shared";
-import { api } from "./service";
+import { $, dialog, esc } from "../shared";
+import { api } from "../service";
 
 const stages = {
   model_config: "读取模型配置",

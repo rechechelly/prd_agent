@@ -2,12 +2,12 @@ import {
   contextTransfer,
   fileLabel,
   fileLabels,
-} from "./assistant-context.mjs";
-import { $, icon } from "./shared";
+} from "../../shared/assistant-context.mjs";
+import { $, icon } from "../shared";
 
 let previousClick;
 const itemTransfer = "application/x-xuye-directory";
-export { fileLabel } from "./assistant-context.mjs";
+export { fileLabel } from "../../shared/assistant-context.mjs";
 export const outputLabel = (output) =>
   output.directoryName || "交付件 · v" + output.version;
 export const outputKeys = (output) =>

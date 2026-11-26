@@ -1,5 +1,5 @@
-import { $, toast } from "./shared";
-import { api, flush, online } from "./service";
+import { $, toast } from "../shared";
+import { api, flush, online } from "../service";
 import { createPrdDiscussion } from "./prd-discussion.mjs";
 import "./prd-discussion.css";
 let events,
