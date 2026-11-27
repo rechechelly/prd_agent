@@ -169,6 +169,14 @@ export async function runAgent(
       ],
       files, scope,
     );
+    function restoreImages(s) {
+      return s
+        .replace(/xuye-asset-(\d+)/g, (m, i) => images[i - 1] || m)
+        .replace(
+          /xuye-ref-[a-f0-9]{20}-\d+\.[a-z0-9.+-]+/gi,
+          (name) => references.assets.get(name) || name,
+        );
+    }
     const { env, inputs, mountSkills, writeSnapshot } = await taskEnvironment(
       stage,
       files,
@@ -242,6 +250,7 @@ export async function runAgent(
     });
     const taskTools = createAgentTools({
       creation,
+      restoreImages,
       scope,
       skillSet,
       mountSkills,
@@ -647,13 +656,6 @@ export async function runAgent(
         502,
       );
     }
-    const restore = (s) =>
-      s
-        .replace(/xuye-asset-(\d+)/g, (m, i) => images[i - 1] || m)
-        .replace(
-          /xuye-ref-[a-f0-9]{20}-\d+\.[a-z0-9.+-]+/gi,
-          (name) => references.assets.get(name) || name,
-        );
     if (!canvas && !hasFiles() && modelReply?.stopReason === "length")
       fault("模型在自动续写后仍达到单次输出上限，本轮未能交付完整结果。", 502);
     const text =
@@ -699,10 +701,10 @@ export async function runAgent(
       answer,
       ...(hasFiles() && {
         workspaceFiles: creation.entries.map((f) =>
-          typeof f.html === "string" ? { ...f, html: restore(f.html) } : f,
+          typeof f.html === "string" ? { ...f, html: restoreImages(f.html) } : f,
         ),
         workspaceChanges: creation.changes.map((f) =>
-          typeof f.html === "string" ? { ...f, html: restore(f.html) } : f,
+          typeof f.html === "string" ? { ...f, html: restoreImages(f.html) } : f,
         ),
       }),
       conversationId: root.id,
@@ -715,7 +717,7 @@ export async function runAgent(
       }),
       toolCalls,
       proposed:
-        files["current.html"] !== html ? restore(files["current.html"]) : null,
+        files["current.html"] !== html ? restoreImages(files["current.html"]) : null,
       ...(files["current.html"] !== html && { base: doc.html || "" }),
     };
     // A lost HTTP response can be retrieved by request ID without re-executing the model.

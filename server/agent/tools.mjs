@@ -2,6 +2,7 @@ import { defineTool } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { obj, str } from "@earendil-works/pi-schema";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
+import { storedDocumentType } from "../../shared/workspace-files.mjs";
 import { drawCanvasTool } from "../workspace/canvas-tools.mjs";
 import { renderDelivery } from "../render.mjs";
 import { discoverSkills } from "../skills.mjs";
@@ -29,6 +30,7 @@ export function agentCatalog() {
 
 export function createAgentTools({
   creation,
+  restoreImages,
   scope,
   skillSet,
   mountSkills,
@@ -50,11 +52,13 @@ export function createAgentTools({
         try {
           const document = creation.target(document_id),
             page = creation.target(html_id);
-          if (document.type !== "文档" || page.type !== "交互 HTML")
+          if (storedDocumentType(document.type) !== "文档" || storedDocumentType(page.type) !== "交互 HTML")
             throw Error("请指定文档和 HTML 文件的 ID");
+          if (!document.html?.trim() || !page.html?.trim())
+            throw Error("嵌入截图需要文档正文和 HTML 原型源码，请先写入内容");
           const result = await renderDelivery({
             prd: document.html,
-            html: page.html,
+            html: restoreImages(page.html),
           });
           return creation.tools
             .find((tool) => tool.name === "edit_online_file")

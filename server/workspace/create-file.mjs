@@ -16,12 +16,18 @@ const reply = (text, isError = false) => ({
   isError,
 });
 
+function fileName(value) {
+  const name = value.trim();
+  if (!name || name === "." || name === ".." || /[\/\\\x00-\x1f]/.test(name))
+    throw Error("请输入有效的在线文件名，不能使用路径分隔符、空段或上级目录");
+  return name;
+}
+
 function relativeNames(path) {
-  if (typeof path !== "string" || /^(?:\/|[a-zA-Z]:|[a-z][a-z0-9+.-]*:\/\/)/i.test(path) || path.includes("\\"))
+  if (typeof path !== "string" || /^(?:\/|[a-z][a-z0-9+.-]*:\/\/)/i.test(path) || path.includes("\\"))
     throw Error("请使用在线工作区内的相对路径");
-  const names = path.replace(/^\.\//, "").split("/").map(name => name.trim());
-  if (names.some(name => !name || name === "." || name === ".." || /[\x00-\x1f]/.test(name)))
-    throw Error("相对路径需要有效文件名，不能包含空段或上级目录");
+  const names = path.replace(/^\.\//, "").split("/").map(fileName);
+  if (/^[a-z]:/i.test(names[0])) throw Error("请使用在线工作区内的相对路径");
   return names;
 }
 
@@ -46,8 +52,10 @@ export function workspaceCreation(nodes, currentId, current) {
         const matches = all.filter(
           (n) => (n.parent || "") === parent && n.title === title,
         );
-        if (matches.length !== 1)
-          throw Error("路径不存在或有重名，请用 list_online_files 返回的 ID");
+        if (!matches.length)
+          throw Error("路径中找不到「" + title + "」，请用 list_online_files 核对位置");
+        if (matches.length > 1)
+          throw Error("路径中有重名文件「" + title + "」，请用 list_online_files 返回的 ID");
         parent = matches[0].id;
       }
       id = parent;
@@ -172,11 +180,7 @@ export function workspaceCreation(nodes, currentId, current) {
             old_text !== undefined)
         )
           throw Error("append 需要文档和正文，并与 old_text 互斥");
-        if (title !== undefined) {
-          if (!title.trim() || title.includes("/"))
-            throw Error("请输入有效文件名");
-          update.title = title.trim();
-        }
+        if (title !== undefined) update.title = fileName(title);
         if (parent_id !== undefined) {
           let parent = parent_id;
           const seen = new Set([n.id]);
@@ -189,6 +193,8 @@ export function workspaceCreation(nodes, currentId, current) {
           }
           update.parent = parent_id;
         }
+        if ((title !== undefined || parent_id !== undefined) && !(update.parent ?? n.parent))
+          relativeNames(update.title ?? n.title);
         if (
           (title !== undefined || parent_id !== undefined) &&
           all.some(
@@ -247,7 +253,7 @@ export function workspaceCreation(nodes, currentId, current) {
     }),
     async execute({ path, type, parent_id, content, source }) {
       try {
-        if (!Object.hasOwn(types, type)) throw Error("不支持的文件类型");
+        if (!Object.hasOwn(onlineFileTypes, type)) throw Error("不支持的文件类型");
         const names = relativeNames(path);
         if (source !== undefined) throw Error("请用 content 提交正文。任务文件可先用 read 读取");
         const working = effective(),
@@ -266,6 +272,8 @@ export function workspaceCreation(nodes, currentId, current) {
           const parsed = JSON.parse(material.html);
           if (!Array.isArray(parsed?.elements))
             throw Error("画布内容需要 elements 数组");
+          if (parsed.remove !== undefined && (!Array.isArray(parsed.remove) || parsed.remove.length))
+            throw Error("新画布没有可删除的图元，remove 应为空数组");
           if (parsed.elements.length)
             material.drawing = validateDrawing(parsed, []);
           delete material.html;
