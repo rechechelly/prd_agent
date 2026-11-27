@@ -25,17 +25,43 @@
 #messageQueue li span { display: inline-block; width: calc(100% - 6em); vertical-align: middle; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #messageQueue button { color: var(--purple); font-size: inherit; padding: 3px 6px; }
 
-#askForm textarea, #questionPreview {
+#question {
   height: var(--question-height, 70px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
 }
-#questionPreview { overflow: auto; margin: 0; font-size: 14px; }
+#question .ProseMirror {
+  position: relative;
+  min-height: 100%;
+  padding: 3px;
+  outline: none;
+  color: inherit;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+#question .ProseMirror[data-empty="true"]::before {
+  position: absolute;
+  color: #909098;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+#question .ProseMirror > :first-child { margin-top: 0; }
+#question .ProseMirror > :last-child { margin-bottom: 0; }
+#question h1 { font-size: 1.4em; }
+#question h2 { font-size: 1.25em; }
+#question h3 { font-size: 1.12em; }
+#question pre { white-space: pre; }
+#question pre code { padding: 0; background: none; }
+#question .tableWrapper { margin-block: 0; }
 #composerGrip {
   display: grid; place-items: center; width: 100%; height: 10px;
   margin: -7px 0 2px; cursor: ns-resize; touch-action: none;
 }
 #composerGrip::after { content: ""; width: 34px; height: 3px; background: #d6d3df; border-radius: 4px; }
 #composerGrip:is(:hover, :focus-visible)::after { background: var(--purple); }
-#previewQuestion { font-size: 12px; white-space: nowrap; padding: 4px; }
 .userTurn .questionBody { white-space: normal; padding: 0; margin: 0; color: inherit; }
-.questionBody > :first-child, #questionPreview > :first-child { margin-top: 0; }
+.questionBody > :first-child { margin-top: 0; }
 .questionBody > :last-child { margin-bottom: 0; }

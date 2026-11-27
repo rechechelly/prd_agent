@@ -68,21 +68,20 @@ let quoted = [],
   previewOriginal = false;
 const sending = new Map();
 const edits = new WeakMap();
-const composers = new WeakMap();
+const draftsBySession = new WeakMap();
 const pendingUploads = new WeakMap();
-let currentComposer, editComposer;
+let composerSession, composer;
 function switchComposer(target) {
-  if (currentComposer === target) return;
-  if (currentComposer)
-    composers.set(currentComposer, {
-      question: $("question").value,
+  if (composerSession === target) return;
+  if (composerSession)
+    draftsBySession.set(composerSession, {
+      draft: composer.getDraft(),
       refs: quoted,
     });
-  editComposer?.();
-  currentComposer = target;
-  const state = target && composers.get(target);
+  composerSession = target;
+  const state = target && draftsBySession.get(target);
   quoted = state?.refs || [];
-  $("question").value = state?.question || "";
+  composer.setDraft(state?.draft);
   $("agentContextInfo").open = false;
   renderQuotes();
 }
@@ -91,21 +90,20 @@ function snapshot() {
 }
 async function quoteSelection(selection, rawSelection) {
   if (!online) return toast("请在登录版工作台使用划词提问");
-  const file = doc, session = currentComposer, source = file.html;
+  const file = doc, session = composerSession, source = file.html;
   try {
     const range = file.type === "交互 HTML"
       ? rawRange(rawSelection || $("htmlInput"), source)
       : documentRange(editor, source, selection);
     const ref = await rangeReference(file, range, source);
-    if (session !== currentComposer || file !== doc || source !== file.html) return;
+    if (session !== composerSession || file !== doc || source !== file.html) return;
     const index = quoted.findIndex(item => item.kind === "range");
     if (index < 0) quoted.push(ref);
     else quoted[index] = ref;
     openAgent = true;
     header();
-    editComposer?.();
     renderQuotes();
-    $("question").focus();
+    composer.focus();
   } catch (error) { toast(error.message); }
 }
 function referenceLabel(ref) {
@@ -131,10 +129,10 @@ function attachFile(data) {
     title: source.title,
   });
   renderQuotes();
-  queueMicrotask(() => $("question").focus());
+  queueMicrotask(() => composer.focus());
 }
 async function uploadFiles(files) {
-  const session = currentComposer;
+  const session = composerSession;
   if (!online || !session) return toast("请在登录版写作助手中上传附件");
   if (!files.length) return;
   const refs = quoted;
@@ -158,7 +156,7 @@ async function uploadFiles(files) {
     }
   } finally {
     pendingUploads.set(session, pendingUploads.get(session) - 1);
-    if (currentComposer === session) renderQuotes();
+    if (composerSession === session) renderQuotes();
   }
 }
 function imageThumbnail(ref) {
@@ -172,14 +170,14 @@ function imageThumbnail(ref) {
 function renderQuotes() {
   const area = $("references");
   area.replaceChildren();
-  if (pendingUploads.get(currentComposer)) {
+  if (pendingUploads.get(composerSession)) {
     const note = document.createElement("small");
     note.setAttribute("role", "status");
     note.textContent = "正在解析附件…";
     area.append(note);
   }
   $("askForm").querySelector(".send").disabled =
-    !!pendingUploads.get(currentComposer);
+    !!pendingUploads.get(composerSession);
   quoted.forEach((ref, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -478,12 +476,13 @@ function header() {
   const isDoc = page === "work";
   $("canvasContext").hidden = page !== "boardPage";
   $("writingContext").hidden = page === "boardPage";
-  $("question").placeholder =
+  composer.setPlaceholder(
     page === "boardPage"
       ? "描述要绘制的原型、业务流程或状态变化…"
       : doc?.type === "交互 HTML"
         ? "描述要修改的页面样式或交互…"
-        : "提问或描述想修改的内容…";
+        : "提问或描述想修改的内容…",
+  );
   const mount = isDoc
     ? $("workRail")
     : page === "result"
@@ -500,11 +499,9 @@ function header() {
   share.hidden = !doc || (!isDoc && page !== "boardPage" && page !== "result");
   if (share.parentNode !== mount)
     mount.insertBefore(share, $("assistantToggle"));
-  const commands = $("generationRuns").parentElement;
-  const dest = isDoc ? $("paper").querySelector(".meta") : mount;
-  if (commands.parentNode !== dest) dest.append(commands);
-  commands.hidden = !doc || !["work", "boardPage", "result"].includes(page);
-  $("generationRuns").hidden = !online || commands.hidden;
+  const generationRuns = $("generationRuns");
+  generationRuns.hidden = !online || !doc || (page !== "boardPage" && page !== "result");
+  if (!generationRuns.hidden) mount.append(generationRuns);
   $("assistantToggle").hidden =
     !isDoc &&
     page !== "boardPage" &&
@@ -975,8 +972,8 @@ function chat(focusIndex) {
       b.innerHTML = icon(ico) + esc(name) + "<span aria-hidden=true>↗</span>";
       b.onclick = () => {
         if (name.startsWith("查询")) {
-          $("question").value = "查询 ";
-          $("question").focus();
+          composer.setText("查询 ");
+          composer.focus();
         } else ask(name);
       };
       area.append(b);
@@ -1205,7 +1202,6 @@ function drainQueue(file, session) {
 }
 async function ask(q, editIndex, editRefs, resume) {
   if (!doc || !q.trim()) return;
-  editComposer?.();
   const file = doc, session = selectedSession(file);
   if (pendingUploads.get(session)) return toast("附件解析完成后即可发送");
   if (!online || editIndex !== undefined || resume) {
@@ -1218,7 +1214,7 @@ async function ask(q, editIndex, editRefs, resume) {
   if (!sending.has(session)) state.stopped = false;
   const item = { question: q, requestId: crypto.randomUUID(), refs, modelId: selectedModel("agent") };
   if (!editRefs) {
-    if ($("question").value.trim() === q.trim()) $("question").value = "";
+    if (composer.getText().trim() === q.trim()) composer.setText("");
     quoted = [];
     renderQuotes();
   }
@@ -1264,8 +1260,8 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
     createdAt: resume?.createdAt || Date.now(),
     requestId: queued?.requestId || resume?.requestId || crypto.randomUUID(),
   };
-  const sentFromComposer = !queued && !resume && $("question").value.trim() === q.trim();
-  if (sentFromComposer) $("question").value = "";
+  const sentFromComposer = !queued && !resume && composer.getText().trim() === q.trim();
+  if (sentFromComposer) composer.setText("");
   if (sentFromComposer || (editIndex === undefined && editRefs === undefined)) {
     quoted = [];
     renderQuotes();
@@ -1478,7 +1474,7 @@ async function setup() {
       completion.request();
     },
   });
-  editComposer = installComposer((element, text) => renderChatMarkdown(editor, element, text), ask);
+  composer = installComposer(ask);
   $("htmlInput").addEventListener("select", refreshSourceQuote);
   $("htmlInput").addEventListener("selectionchange", refreshSourceQuote);
   $("quoteSource").onmousedown = e => e.preventDefault();
@@ -1514,7 +1510,7 @@ async function setup() {
     attachText(text) {
       quoted.push({ kind: "selection", title: "外部文本", text: text.slice(0, 12000) });
       renderQuotes();
-      $("question").focus();
+      composer.focus();
     },
   });
 
@@ -1604,7 +1600,7 @@ async function setup() {
     };
     sessions(file).push(session);
     selectChat(file, session);
-    $("question").focus();
+    composer.focus();
   };
   $("chatHistory").onclick = openChatHistory;
   $("closeHistory").onclick = () => $("historyDialog").close();

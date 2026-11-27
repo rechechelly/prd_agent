@@ -537,22 +537,6 @@ footer {
 #askForm:focus-within {
   border-color: #8e879f;
 }
-#askForm textarea {
-  display: block;
-  width: 100%;
-  height: 62px;
-  resize: none;
-  outline: none;
-  border: 0;
-  padding: 3px;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  background: none;
-}
-#askForm textarea::placeholder {
-  color: #909098;
-}
 .composerTools {
   display: flex;
   align-items: center;
@@ -1209,13 +1193,8 @@ button.danger:hover {
   background: #f0edf7;
   color: #5a488b;
 }
-.deliveryCommands {
-  display: flex;
-  align-items: center;
+#generationRuns {
   margin-left: auto;
-  gap: 5px;
-}
-.deliveryCommands button {
   font-size: 12px;
 }
 #chatTabs {
@@ -1411,9 +1390,6 @@ button.danger:hover {
 }
 #folderItems button {
   text-align: left;
-}
-#work .deliveryCommands {
-  margin-left: auto;
 }
 @media (max-width: 760px) {
   #paper {

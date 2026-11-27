@@ -5,8 +5,8 @@ import { $, toast } from "../shared";
 const selectionType = "application/x-xuye-selection";
 
 export function installReferenceInput({ editor, getFile, quoteSelection, attachFile, uploadFiles, attachText }) {
-  const panel = $("agent"), htmlInput = $("htmlInput");
-  let dragged;
+  const panel = $("agent"), htmlInput = $("htmlInput"), composer = $("question");
+  let dragged, draggingComposerText = false;
 
   function remember(event, selection, raw) {
     const file = getFile();
@@ -24,8 +24,9 @@ export function installReferenceInput({ editor, getFile, quoteSelection, attachF
   });
   const accepts = transfer => [contextTransfer, selectionType, "text/plain", "Files"]
     .some(type => transfer.types.includes(type));
+  composer.addEventListener("dragstart", () => { draggingComposerText = true; });
   panel.ondragover = event => {
-    if (!accepts(event.dataTransfer)) return;
+    if (draggingComposerText || !accepts(event.dataTransfer)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
     panel.classList.add("accept-context");
@@ -35,12 +36,14 @@ export function installReferenceInput({ editor, getFile, quoteSelection, attachF
   };
   document.addEventListener("dragend", () => {
     dragged = null;
+    draggingComposerText = false;
     panel.classList.remove("accept-context");
   });
-  panel.ondrop = event => {
+  // Handle references before the rich-text editor inserts the drop as content.
+  panel.addEventListener("drop", event => {
     const transfer = event.dataTransfer;
     panel.classList.remove("accept-context");
-    if (!accepts(transfer)) return;
+    if (draggingComposerText || !accepts(transfer)) return;
     event.preventDefault();
     event.stopPropagation();
     if (transfer.files.length) return uploadFiles(Array.from(transfer.files));
@@ -58,8 +61,8 @@ export function installReferenceInput({ editor, getFile, quoteSelection, attachF
       const text = transfer.getData("text/plain");
       if (text.trim()) attachText(text);
     }
-  };
-  $("question").addEventListener("paste", event => {
+  }, true);
+  composer.addEventListener("paste", event => {
     const data = event.clipboardData;
     if (!data) return;
     let images = Array.from(data.files).filter(file => file.type.startsWith("image/"));
@@ -67,9 +70,12 @@ export function installReferenceInput({ editor, getFile, quoteSelection, attachF
       .filter(item => item.kind === "file" && item.type.startsWith("image/"))
       .map(item => item.getAsFile()).filter(Boolean);
     if (!images.length) return;
-    if (!data.getData("text/plain")) event.preventDefault();
+    if (!data.getData("text/plain") && !data.getData("text/markdown")) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     uploadFiles(images);
-  });
+  }, true);
   $("attachContext").onclick = () => {
     if (online) $("chatFiles").click();
     else toast("请在登录版写作助手中上传附件");

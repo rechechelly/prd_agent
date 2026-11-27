@@ -87,9 +87,6 @@
                   </div>
                   <div class="meta">
                     <span id="docType"></span><span id="date"></span>
-                    <div class="deliveryCommands">
-                      <button id="generationRuns" hidden>生成记录</button>
-                    </div>
                   </div>
                   <div id="changeBar" hidden></div>
                   <div id="draftPreview" class="tiptap" hidden></div>
@@ -148,13 +145,7 @@
                 <input id="chatFiles" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx" multiple hidden />
                 <div id="composerGrip" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="调整输入框高度" aria-valuemin="62" title="拖动调整输入框高度"></div>
                 <div id="references"></div>
-                <textarea
-                  id="question"
-                  aria-label="向写作助手提问"
-                  placeholder="提问或描述想修改的内容…"
-                  required
-                ></textarea>
-                <div id="questionPreview" class="agentReply" aria-label="Markdown 预览" hidden></div>
+                <div id="question" class="agentReply"></div>
                 <div class="composerTools">
                   <details id="agentContextInfo">
                     <summary title="上下文与工具" aria-label="上下文与工具">
@@ -187,7 +178,6 @@
                     </div>
                   </details>
                   <button type="button" id="agentModel" aria-label="选择助手模型" aria-haspopup="dialog">离线演示</button>
-                  <button type="button" id="previewQuestion" title="Markdown 预览" aria-pressed="false">预览</button>
                   <button
                     type="button"
                     id="attachContext"
@@ -229,6 +219,7 @@
         </section>
         <section id="result" hidden>
           <div id="resultRail" class="editorRail">
+            <button type="button" id="generationRuns" hidden>生成记录</button>
             <div id="htmlModes" role="group" aria-label="HTML 编辑模式" hidden>
               <button id="renderMode">渲染模式</button
               ><button id="sourceMode">Raw Text</button><button id="quoteSource" hidden>问 Agent</button>
