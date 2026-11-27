@@ -6,7 +6,8 @@ export function installDocumentOutline(editorRoot) {
     preview = $("draftPreview");
   const nav = $("documentOutline"),
     list = $("outlineItems");
-  const trigger = $("outlineToggle"),
+  const rail = $("outlineRail"),
+    trigger = $("outlineToggle"),
     divider = $("outlineResize");
   const widthKey = "xuye.outline.width";
   let preferredWidth = Number(localStorage.getItem(widthKey)) || undefined;
@@ -22,7 +23,8 @@ export function installDocumentOutline(editorRoot) {
   function layout() {
     const visible = headings.length > 0 && (compact ? drawerOpen : !collapsed);
     nav.hidden = !visible;
-    trigger.hidden = !headings.length;
+    rail.hidden = !headings.length;
+    rail.classList.toggle("expanded", visible);
     const label = visible ? "收起文档目录" : "展开文档目录";
     trigger.title = label;
     trigger.setAttribute("aria-label", label);
@@ -50,13 +52,12 @@ export function installDocumentOutline(editorRoot) {
       toggle(false);
     }
   });
-  pane.addEventListener("pointerdown", (event) => {
-    if (compact && drawerOpen && !trigger.contains(event.target)) {
+  pane.addEventListener("pointerdown", () => {
+    if (compact && drawerOpen) {
       drawerOpen = false;
       layout();
     }
   });
-
   let minWidth, maxWidth, width;
   function updateWidth(value) {
     const available = body.clientWidth;

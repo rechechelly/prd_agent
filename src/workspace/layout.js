@@ -2,6 +2,7 @@ import { $ } from "../shared";
 export function installLayout() {
   const layout = $("layout"),
     side = $("sidebar"),
+    menu = $("menu"),
     agent = $("agent"),
     main = layout.querySelector("main");
   const saved = JSON.parse(localStorage.getItem("xuye.panels") || "{}");
@@ -10,11 +11,13 @@ export function installLayout() {
     right: saved.right || 374,
     closed: !!saved.closed,
   };
+  const mobile = matchMedia("(max-width: 820px)");
+  let drawerOpen = false;
   function save() {
     localStorage.setItem("xuye.panels", JSON.stringify(panels));
   }
   function apply() {
-    const wide = innerWidth > 820;
+    const expanded = mobile.matches ? drawerOpen : !panels.closed;
     const left = Math.min(panels.left, innerWidth * 0.36);
     const right = Math.min(
       panels.right,
@@ -22,11 +25,9 @@ export function installLayout() {
     );
     layout.style.setProperty("--left-w", left + "px");
     layout.style.setProperty("--right-w", right + "px");
-    layout.classList.toggle("closed-dir", wide && panels.closed);
-    $("menu").setAttribute(
-      "aria-expanded",
-      String(wide ? !panels.closed : side.classList.contains("open")),
-    );
+    layout.classList.toggle("closed-dir", !expanded);
+    menu.setAttribute("aria-expanded", String(expanded));
+    menu.title = menu.ariaLabel = expanded ? "收起文件目录" : "展开文件目录";
   }
   function separator(which, parent) {
     const el = document.createElement("div");
@@ -69,12 +70,27 @@ export function installLayout() {
   }
   separator("left", side);
   separator("right", agent);
-  $("menu").onclick = () => {
-    if (innerWidth <= 820) side.classList.toggle("open");
-    else panels.closed = !panels.closed;
-    save();
+  function closeDrawer() {
+    if (!mobile.matches || !drawerOpen) return;
+    if (side.contains(document.activeElement)) menu.focus({ preventScroll: true });
+    drawerOpen = false;
+    apply();
+  }
+  menu.onclick = () => {
+    if (mobile.matches) drawerOpen = !drawerOpen;
+    else {
+      panels.closed = !panels.closed;
+      save();
+    }
     apply();
   };
+  side.addEventListener("keydown", event => {
+    if (!event.defaultPrevented && event.key === "Escape") closeDrawer();
+  });
+  mobile.addEventListener("change", () => {
+    if (!mobile.matches) drawerOpen = false;
+    apply();
+  });
   window.addEventListener("resize", apply);
   apply();
   const center = document.createElement("div");
@@ -111,4 +127,5 @@ export function installLayout() {
     },
     true,
   );
+  return closeDrawer;
 }

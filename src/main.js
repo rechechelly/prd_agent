@@ -71,6 +71,7 @@ const edits = new WeakMap();
 const draftsBySession = new WeakMap();
 const pendingUploads = new WeakMap();
 let composerSession, composer;
+let closeDirectoryDrawer;
 function switchComposer(target) {
   if (composerSession === target) return;
   if (composerSession)
@@ -379,7 +380,7 @@ function tree() {
     selectDoc: openDoc,
     quoteFile(ref) {
       openAgent = true;
-      $("sidebar").classList.remove("open");
+      closeDirectoryDrawer();
       header();
       attachFile(ref);
     },
@@ -488,7 +489,6 @@ function header() {
     : page === "result"
       ? $("resultRail")
       : $(page).querySelector(".pagehead") || $(page);
-  if ($("menu").parentNode !== mount) mount.prepend($("menu"));
   if ($("assistantToggle").parentNode !== mount)
     mount.append($("assistantToggle"));
   const completionButton = $("completionToggle");
@@ -526,7 +526,7 @@ function show(p) {
   switchComposer(selectedSession(doc));
   for (const id of ["work", "boardPage", "result", "emptyPage"])
     $(id).hidden = p !== id;
-  $("sidebar").classList.remove("open");
+  closeDirectoryDrawer();
   tree();
   header();
 }
@@ -1492,6 +1492,7 @@ async function setup() {
   });
   $("renderMode").onclick = () => setHtmlMode(false);
   $("sourceMode").onclick = () => setHtmlMode(true);
+  closeDirectoryDrawer = installLayout();
   if (doc) openDoc(doc);
   else openFirstFile();
   $("title").oninput = (e) => {
@@ -1503,7 +1504,6 @@ async function setup() {
   $("title").onblur = () => ($("title").value = doc.title);
   $("newDoc").onclick = $("emptyNewDoc").onclick = () => create();
   $("serverLink").hidden = online;
-  installLayout();
   initModels(hideSuggestion);
   installReferenceInput({
     editor, getFile: () => doc, quoteSelection, attachFile, uploadFiles,

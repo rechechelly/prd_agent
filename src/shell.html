@@ -9,9 +9,11 @@
   </style>
   <body>
     <div id="layout">
-      <aside id="sidebar">
+      <aside id="sidebar" aria-label="文件目录">
         <div class="treelabel">
-          文件目录
+          <button type="button" id="menu" aria-label="收起文件目录"
+            aria-controls="tree newDoc directorySettings" aria-expanded="true"
+            title="收起文件目录">☰</button>
           <button
             id="newDoc"
             title="新建根目录文件"
@@ -21,7 +23,7 @@
           </button>
         </div>
         <div id="tree"></div>
-        <div class="sidefoot">
+        <div class="sidefoot" id="directorySettings">
           <button id="workspaceSettings">
             <i data-ico="settings"></i>工作区设置
           </button>
@@ -33,13 +35,6 @@
         <section id="work">
           <div id="document">
             <div id="workRail" class="editorRail">
-              <button
-                id="menu"
-                aria-label="文件目录"
-                title="展开或收起文件目录"
-              >
-                ☰
-              </button>
               <button
                 id="completionToggle"
                 type="button"
@@ -64,27 +59,28 @@
               </button>
             </div>
             <div id="documentBody">
-              <nav id="documentOutline" aria-label="文档目录" hidden>
-                <div class="outlineHead">文档目录</div>
-                <div id="outlineItems"></div>
-                <div id="outlineResize" role="separator" tabindex="0"
-                  aria-orientation="vertical" aria-label="调整文档目录宽度"
-                  aria-controls="documentOutline" title="拖动调整目录宽度"></div>
-              </nav>
+              <div id="outlineRail" hidden>
+                <div class="outlineHead">
+                  <button
+                    id="outlineToggle"
+                    type="button"
+                    aria-controls="documentOutline"
+                    aria-expanded="false"
+                    aria-label="展开文档目录"
+                    title="展开文档目录"
+                  ><i data-ico="arrowRight"></i></button>
+                  <span>文档目录</span>
+                </div>
+                <nav id="documentOutline" aria-label="文档目录" hidden>
+                  <div id="outlineItems"></div>
+                  <div id="outlineResize" role="separator" tabindex="0"
+                    aria-orientation="vertical" aria-label="调整文档目录宽度"
+                    aria-controls="documentOutline" title="拖动调整目录宽度"></div>
+                </nav>
+              </div>
               <div id="paperScroll">
                 <article id="paper">
-                  <div class="documentTitleRow">
-                    <button
-                      id="outlineToggle"
-                      type="button"
-                      hidden
-                      aria-controls="documentOutline"
-                      aria-expanded="false"
-                      aria-label="展开文档目录"
-                      title="展开文档目录"
-                    ><i data-ico="arrowRight"></i></button>
-                    <input id="title" aria-label="文档标题" />
-                  </div>
+                  <input id="title" aria-label="文档标题" />
                   <div class="meta">
                     <span id="docType"></span><span id="date"></span>
                   </div>
