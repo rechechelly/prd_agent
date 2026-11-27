@@ -60,7 +60,7 @@ npm start
 | 在线正文修改 | Tab 采纳和 `edit_online_file` 共用 [shared/online-file-edit.mjs](shared/online-file-edit.mjs)。补全模型直接返回 Markdown，编辑器将候选绑定到文件 ID、文档快照和富文本光标位置，采纳时作为一次可撤销的修改写入。 |
 | 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent/run.mjs](server/agent/run.mjs) 的 `runAgent` |
 | 模型协议、上下文窗口、输出 token 和供应商适配 | [server/agent/model.mjs](server/agent/model.mjs)；普通补全和模型发现在 [server/models/client.mjs](server/models/client.mjs) |
-| 工具清单、参数与执行 | [shared/agent-catalog.mjs](shared/agent-catalog.mjs) 的描述和 [server/agent/tools.mjs](server/agent/tools.mjs) 的注册。文件与画布操作分别见 `server/workspace/create-file.mjs`、`server/workspace/canvas-tools.mjs` |
+| 工具清单、参数与执行 | [shared/agent-catalog.mjs](shared/agent-catalog.mjs) 的描述和 [server/agent/tools.mjs](server/agent/tools.mjs) 的注册。在线文件的工具参数见 `server/workspace/file-tools.mjs`，目录解析和读写逻辑见 `server/workspace/online-files.mjs`，画布操作见 `server/workspace/canvas-tools.mjs` |
 | 技能发现、导入、按需加载 | [server/skills.mjs](server/skills.mjs)、[skills/prd-writing/SKILL.md](skills/prd-writing/SKILL.md) |
 | 图片、附件和临时任务目录 | `server/agent/context.mjs`、`server/attachments/attachment-parser.mjs`、`server/runtime/task-environment.mjs` |
 | 会话续接、持久化记录和流式展示 | `server/agent/queue.mjs`、`src/chat/chat-queue.js`、`server/agent/conversation.mjs`、`server/agent/history.mjs`、`server/agent/stream.mjs`、`src/chat/chat-trace.js` |
@@ -132,4 +132,4 @@ npm start
 
 ## 版本与许可证
 
-开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v2.0.0`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。
+开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v2.0.1`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。

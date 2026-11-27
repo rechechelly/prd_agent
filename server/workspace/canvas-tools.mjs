@@ -1,14 +1,10 @@
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
-import { defineTool } from "@earendil-works/pi-durable";
+import { defineTextTool } from "../agent/text-tool.mjs";
 import { arr, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { validateDrawing } from "../../shared/canvas-model.mjs";
 import { boardType } from "../../shared/workspace-files.mjs";
 export function drawCanvasTool(workspace) {
-  const reply = (text, isError = false) => ({
-    output: [{ type: "text", text }],
-    isError,
-  });
-  return defineTool({
+  return defineTextTool({
     name: "draw_online_canvas",
     description: toolDescriptions.draw_online_canvas,
     parameters: obj({
@@ -56,61 +52,48 @@ export function drawCanvasTool(workspace) {
       ),
     }),
     async execute(args) {
-      try {
-        const doc = workspace.target(args.id, args.path);
-        if (!boardType(doc.type))
-          throw Error(
-            "目标不是画布。用 list_online_files 找到目标画布，或用 write_online_file 创建 canvas，再传入其 id 或 path。",
-          );
-        const scene = doc.scene || [];
-        let patch;
-        if (args.drawing !== undefined) {
-          patch = validateDrawing(JSON.parse(args.drawing), scene);
-        } else {
-          const pending = new Map(doc.drawing?.elements.map((e) => [e.id, e]));
-          const removed = new Set(doc.drawing?.remove);
-          const effective = new Map(
-            scene
-              .filter((e) => !e.isDeleted && !removed.has(e.id))
-              .map((e) => [e.id, e]),
-          );
-          for (const [id, item] of pending)
-            effective.set(id, { ...effective.get(id), ...item });
-          const batch = validateDrawing(args, [...effective.values()]);
-          for (const item of batch.elements) {
-            removed.delete(item.id);
-            pending.set(item.id, { ...pending.get(item.id), ...item });
-          }
-          for (const id of batch.remove) {
-            pending.delete(id);
-            if (scene.some((e) => e.id === id && !e.isDeleted)) removed.add(id);
-          }
-          const all = {
-            elements: [...pending.values()],
-            remove: [...removed],
-          };
-          patch =
-            all.elements.length || all.remove.length
-              ? validateDrawing(all, scene)
-              : undefined;
-        }
-        workspace.saveDrawing(doc, patch);
-        return reply(
-          doc.title +
-            "（" +
-            doc.id +
-            "）：" +
-            (patch
-              ? "本轮已记录 " +
-                patch.elements.length +
-                " 个新增或更新图元，删除 " +
-                patch.remove.length +
-                " 个。完成后用户可预览和采用。"
-              : "本轮修改已撤回。"),
+      const doc = workspace.target(args.id, args.path);
+      if (!boardType(doc.type))
+        throw Error(
+          "目标不是画布。用 list_online_files 找到目标画布，或用 write_online_file 创建 canvas，再传入其 id 或 path。",
         );
-      } catch (error) {
-        return reply(error.message, true);
+      const scene = doc.scene || [];
+      let patch;
+      if (args.drawing !== undefined) {
+        patch = validateDrawing(JSON.parse(args.drawing), scene);
+      } else {
+        const pending = new Map(doc.drawing?.elements.map((e) => [e.id, e]));
+        const removed = new Set(doc.drawing?.remove);
+        const effective = new Map(
+          scene
+            .filter((e) => !e.isDeleted && !removed.has(e.id))
+            .map((e) => [e.id, e]),
+        );
+        for (const [id, item] of pending)
+          effective.set(id, { ...effective.get(id), ...item });
+        const batch = validateDrawing(args, [...effective.values()]);
+        for (const item of batch.elements) {
+          removed.delete(item.id);
+          pending.set(item.id, { ...pending.get(item.id), ...item });
+        }
+        for (const id of batch.remove) {
+          pending.delete(id);
+          if (scene.some((e) => e.id === id && !e.isDeleted)) removed.add(id);
+        }
+        const all = {
+          elements: [...pending.values()],
+          remove: [...removed],
+        };
+        patch =
+          all.elements.length || all.remove.length
+            ? validateDrawing(all, scene)
+            : undefined;
       }
+      workspace.saveDrawing(doc, patch);
+      const summary = patch
+        ? `本轮已记录 ${patch.elements.length} 个新增或更新图元，删除 ${patch.remove.length} 个。完成后用户可预览和采用。`
+        : "本轮修改已撤回。";
+      return `${doc.title}（${doc.id}）：${summary}`;
     },
   });
 }

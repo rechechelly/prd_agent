@@ -1,3 +1,4 @@
+import { toolReply } from "../agent/text-tool.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,6 @@ import { managedSkillDirectory } from "../skills.mjs";
 const exec = promisify(execFile);
 const helper = fileURLToPath(new URL("./task-files.py", import.meta.url));
 const maxFileBytes = 32 * 1024 * 1024;
-const reply = (text, isError = false) => ({ output: [{ type: "text", text }], isError });
 
 export function taskFileTools(work, inputs) {
   // The native tools work on private snapshots. Only the descriptor-relative transfer
@@ -79,13 +79,13 @@ export function taskFileTools(work, inputs) {
     ...native,
     async execute(args, api, context) {
       const writing = native.name !== "read";
-      if (writing && Buffer.byteLength(JSON.stringify(args)) > maxFileBytes) return reply("文件过大", true);
+      if (writing && Buffer.byteLength(JSON.stringify(args)) > maxFileBytes) return toolReply("文件过大", true);
       const temp = await fs.mkdtemp(path.join(stage, "pi-file-"));
       try {
         const env = fileEnvironment(api.env, temp, writing, context.abortSignal);
         return await native.execute(args, Object.create(api, { env: { value: env } }), context);
       } catch (error) {
-        return reply(error.message.replaceAll(temp, "(任务文件)").replaceAll(stage, "(任务目录)"), true);
+        return toolReply(error.message.replaceAll(temp, "(任务文件)").replaceAll(stage, "(任务目录)"), true);
       } finally {
         await fs.rm(temp, { recursive: true, force: true });
       }

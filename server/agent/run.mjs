@@ -2,7 +2,7 @@ import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { selectionScope } from "./selection.mjs";
 import { maskImages, prepareReferences } from "./context.mjs";
 import { conversationFor } from "./conversation.mjs";
-import { createAgentTools, toolReply } from "./tools.mjs";
+import { createAgentTools } from "./tools.mjs";
 import { runtimeModels } from "./model.mjs";
 import { loopPolicy, CompactionBoundary } from "./policy.mjs";
 import {
@@ -14,7 +14,8 @@ import {
 } from "./prompts.mjs";
 import { agentHistory, chatStorageId, pausedRequest, pauseKind, transcriptPath } from "./history.mjs";
 import { diagnostic, toolProgress } from "./stream.mjs";
-import { workspaceCreation } from "../workspace/create-file.mjs";
+import { onlineWorkspace } from "../workspace/online-files.mjs";
+import { toolReply } from "./text-tool.mjs";
 import { discoverSkills, skillRuntime } from "../skills.mjs";
 import { boardType } from "../../shared/workspace-files.mjs";
 import { sceneVersion } from "../../shared/canvas-model.mjs";
@@ -203,7 +204,7 @@ export async function runAgent(
       await writeSnapshot("current.html", masked);
       files["current.html"] = masked;
     }
-    const creation = workspaceCreation(
+    const workspace = onlineWorkspace(
       docs,
       ownerId,
       {
@@ -218,10 +219,10 @@ export async function runAgent(
       },
     );
     const hasFiles = () =>
-      creation.entries.length > 0 || creation.changes.length > 0;
+      workspace.entries.length > 0 || workspace.changes.length > 0;
     if (saved) {
-      creation.entries.push(...saved.entries);
-      creation.changes.push(...saved.changes);
+      workspace.entries.push(...saved.entries);
+      workspace.changes.push(...saved.changes);
     }
     const answerFragments = continuing ? saved.fragments : [];
     const work = workspaceCheckpoints(stage, {
@@ -230,7 +231,7 @@ export async function runAgent(
       baseHtml: doc.html || "", baseScene: canvas ? doc.scene : undefined,
     }, () => ({
       current: files["current.html"], extraImages: images.slice(baseImageCount),
-      entries: creation.entries, changes: creation.changes, drawing: drawing.patch,
+      entries: workspace.entries, changes: workspace.changes, drawing: drawing.patch,
       skills: [...skillSet.active], fragments: answerFragments,
     }));
     let compactRequest;
@@ -249,7 +250,7 @@ export async function runAgent(
       },
     });
     const taskTools = createAgentTools({
-      creation,
+      workspace,
       restoreImages,
       scope,
       skillSet,
@@ -595,8 +596,8 @@ export async function runAgent(
       const state = createHash("sha256")
         .update(
           JSON.stringify([
-            creation.entries,
-            creation.changes,
+            workspace.entries,
+            workspace.changes,
             files["current.html"],
             drawing.patch,
           ]),
@@ -700,10 +701,10 @@ export async function runAgent(
     const out = {
       answer,
       ...(hasFiles() && {
-        workspaceFiles: creation.entries.map((f) =>
+        workspaceFiles: workspace.entries.map((f) =>
           typeof f.html === "string" ? { ...f, html: restoreImages(f.html) } : f,
         ),
-        workspaceChanges: creation.changes.map((f) =>
+        workspaceChanges: workspace.changes.map((f) =>
           typeof f.html === "string" ? { ...f, html: restoreImages(f.html) } : f,
         ),
       }),
