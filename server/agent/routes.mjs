@@ -1,6 +1,5 @@
 import { generatedFiles, generatedId } from "../../shared/workspace-files.mjs";
-import { complete } from "../models/client.mjs";
-import { completionEdit, completionMessages } from "../models/completion.mjs";
+import { suggestCompletion } from "../models/completion.mjs";
 import { modelConfig } from "../models/providers.mjs";
 import { fault } from "../storage.mjs";
 import { recordWorkspaceFiles } from "../workspace/generation-log.mjs";
@@ -80,9 +79,8 @@ export async function agentRoute(url, req, res, files, chats, input) {
   if (path === "/api/agent" && input.mode === "complete") {
     const controller = new AbortController();
     res.once("close", () => controller.abort());
-    const text = await complete(modelConfig("completion", input.modelId), completionMessages(file.title, input), 1024, controller.signal);
-    const edit = completionEdit(text, input.editableAfter);
-    return input.editableAfter === undefined ? { text: edit.insert } : { edit };
+    const edit = await suggestCompletion(modelConfig("completion", input.modelId), file.title, input, controller.signal);
+    return input.editableAfter === undefined ? { text: edit?.insert ?? "" } : { edit };
   }
   if (path === "/api/agent" && input.mode !== "chat") fault("请通过 Agent 对话创建文件");
   const session = findSession(file, input.chatId);

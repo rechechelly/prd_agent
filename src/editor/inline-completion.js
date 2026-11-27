@@ -72,9 +72,14 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
       status("正在补全…");
       if (online) await flush();
       if (!current()) return;
-      const edit = online ? (await api("agent", { mode: "complete", doc: file.id, ...context }, token.signal)).edit
+      const edit = online ? (await api("agent", { mode: "complete", doc: file.id,
+        trigger: manual ? "manual" : "auto", ...context }, token.signal)).edit
         : offlineEdit(context, file.title);
       if (!current()) return;
+      if (edit === null) {
+        status(manual ? "暂无补全建议" : "");
+        return;
+      }
       if (!edit || !suffix.text.startsWith(edit.keep + edit.remove)) throw Error("建议与原文不符，请重新生成");
       const start = suffix.positions[edit.keep.length], end = suffix.positions[edit.keep.length + edit.remove.length];
       const decorations = [];

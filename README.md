@@ -79,7 +79,7 @@ npm start
 | Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
 | 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。连续 2 次续写都没有推进文件修改时停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
 | Agent 模型预算 | 模型适配层声明 128,000 token 上下文窗口；`XUYE_MAX_OUTPUT_TOKENS` 默认为 32,768，可设置为 1–127,999。部署时按实际模型支持的上限配置 | `server/agent/model.mjs` |
-| 文档及源码补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
+| 文档及源码补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token。自动补全遇到空建议时结束；主动补全首次无建议或编辑格式、定位有误时最多再请求一次 | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
 | 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
 | 对话输入框 | 可拖动上边缘，也可聚焦边缘后按上下键，每次调整 16 px。默认高度 70 px，下限 62 px，上限取 540 px 和窗口高度 52% 中的较小值。偏好保存在浏览器的 `xuye.composerHeight` | `src/chat/composer.js` |
 
