@@ -6,6 +6,7 @@ import { api, flush, online } from "../service";
 import { selectedModel } from "../workspace/providers";
 import { toast } from "../shared";
 import { blockPathAt, completionSuffix } from "./completion-range";
+import { showCompletionIndicator } from "./completion-indicator";
 
 // Tab's browser default can't be replayed after waiting for the second key.
 function normalTab(view, event) {
@@ -68,6 +69,7 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     };
     const current = () => !token.signal.aborted && eligible() && file === getFile() &&
       view.state.doc === base && view.state.selection.from === from;
+    const hideIndicator = showCompletionIndicator(view, from, token.signal);
     try {
       status("正在补全…");
       if (online) await flush();
@@ -112,6 +114,8 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
         status("补全失败", e.message);
         if (manual) toast(e.message);
       }
+    } finally {
+      hideIndicator();
     }
   }
   function schedule() {

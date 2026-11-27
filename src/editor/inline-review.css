@@ -12,3 +12,32 @@ span[data-inline-delta="remove"]+span[data-inline-delta="add"]{margin-inline-sta
 .completionAddition { pointer-events:none; white-space:pre-wrap; }
 .completionAddition.completionBlocks { display:block; white-space:normal; }
 #htmlInput .completionAddition { white-space:pre; }
+
+.completionPending {
+  position: fixed;
+  z-index: 22;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid #c6b9ed;
+  border-radius: 6px;
+  background: #f5f1ff;
+  color: #50388b;
+  box-shadow: 0 2px 6px #30204721;
+  font: 600 12px/1.4 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.completionPending::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 2px solid #cfc3ec;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: completionSpin .8s linear infinite;
+}
+@keyframes completionSpin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .completionPending::before { animation: none; } }
