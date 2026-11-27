@@ -10,6 +10,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS file_shares (
   token TEXT PRIMARY KEY, doc TEXT NOT NULL, version INTEGER NOT NULL, file TEXT NOT NULL,
   revision INTEGER NOT NULL DEFAULT 1, UNIQUE(doc,version,file))`);
 
+if (!db.prepare("PRAGMA table_info(file_shares)").all().some((c) => c.name === "enabled"))
+  db.exec("ALTER TABLE file_shares ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
+
 function content(docs, { doc, version, file }) {
   const owner = docs?.find((d) => d.id === doc);
   if (!owner && file === "document") return;
@@ -45,24 +48,27 @@ function content(docs, { doc, version, file }) {
       content: output[file],
     };
 }
-export function createFileShare(docs, ref) {
+// A status lookup never creates a public link. Existing links retain their state across upgrades.
+export function fileShareState(docs, ref, enabled) {
   if (!content(docs, ref)) fault("文件不存在", 404);
-  let row = db
-    .prepare(
-      "SELECT token FROM file_shares WHERE doc=? AND version=? AND file=?",
-    )
-    .get(ref.doc, ref.version, ref.file);
-  if (!row) {
-    row = { token: token() };
-    db.prepare(
-      "INSERT INTO file_shares(token,doc,version,file) VALUES(?,?,?,?)",
-    ).run(row.token, ref.doc, ref.version, ref.file);
+  const args = [ref.doc, ref.version, ref.file];
+  let row = db.prepare("SELECT token,enabled FROM file_shares WHERE doc=? AND version=? AND file=?").get(...args);
+  if (typeof enabled === "boolean" && (!row || !!row.enabled !== enabled)) {
+    if (!row) {
+      row = { token: token() };
+      db.prepare("INSERT INTO file_shares(token,doc,version,file,enabled) VALUES(?,?,?,?,?)")
+        .run(row.token, ...args, Number(enabled));
+    } else {
+      db.prepare("UPDATE file_shares SET enabled=?, revision=revision+1 WHERE token=?")
+        .run(Number(enabled), row.token);
+    }
+    row.enabled = enabled;
   }
-  return row.token;
+  return { enabled: !!row?.enabled, token: row?.token };
 }
 export function lookupFileShare(key, docs) {
   const ref = db
-    .prepare("SELECT doc,version,file,revision FROM file_shares WHERE token=?")
+    .prepare("SELECT doc,version,file,revision FROM file_shares WHERE enabled=1 AND token=?")
     .get(key);
   if (!ref) return;
   const data = content(docs, ref);

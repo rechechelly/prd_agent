@@ -1,6 +1,6 @@
 import { AllSelection, TextSelection } from "@tiptap/pm/state";
 
-export function installTextToolbar(editor, button, blocks) {
+export function installTextToolbar(editor, button, blocks, quoteSelection) {
   const root = editor.view.dom;
   const bar = document.createElement("div");
   bar.className = "textSelectionBar";
@@ -29,7 +29,7 @@ export function installTextToolbar(editor, button, blocks) {
     bar.append(control);
   }
   const remove = button("删除所选内容", "删除", () => blocks.apply(null));
-  bar.append(remove);
+  bar.append(remove, button("针对选区提问", "问 Agent", () => quoteSelection(blocks.range || editor.state.selection)));
   function refresh() {
     const { selection } = editor.state;
     const native = window.getSelection();

@@ -7,7 +7,7 @@ description: 根据产品经理的需求、草稿或旧页面设计产品功能�
 
 设计新产品需求时，交付一份可编辑需求文档和一个可交互 HTML，二者共用字段、状态和示例。仅评审或修改已有文件时按用户指定范围处理。
 
-在叙页工作台的对话中，读取本包的[撰写规范](generation-prompt.txt)。用 `write_file` 创建实际的文档正文（document）和单文件原型（html），默认并列放在当前文件下。长内容先写骨架，再用 `edit_file` 分段完善，也可用 Bash 写好源码后通过 `write_file` 的 source 导入。按下文验证两个文件。为已有需求增改字段或交互时，先用 list_file 找到已有交付文件，再用 edit_file 修改相关部分。需要配图时，使用配套的 data-prd-view 和 data-prd-shot 标记，调用 `embed_view_screenshots` 并检查工具结果。工作台已配置截图浏览器，此步骤直接由工具完成。最终用 `read_file` 核对交付内容。
+在叙页工作台的对话中，读取本包的[撰写规范](generation-prompt.txt)。用 `write_file` 创建实际的文档正文（document）和单文件原型（html），默认并列放在当前文件下。长内容先写骨架，再用 `edit_file` 分段完善，也可用 Bash 写好源码后通过 `write_file` 的 source 导入。按下文验证两个文件。为当前需求增改字段或交互时，优先用 edit_file 就地修改当前文件。用户明确指定另一个目标时，再用 list_file 定位该文件。需要配图时，使用配套的 data-prd-view 和 data-prd-shot 标记，调用 `embed_view_screenshots` 并检查工具结果。工作台已配置截图浏览器，此步骤直接由工具完成。最终用 `read_file` 核对交付内容。
 
 用户提供的截图或文案可能描述旧流程。先区分现状和本次改动，再用一条具体的「初始数据 → 用户操作 → 预期结果」场景验证改动。连续操作涉及累计金额或状态时，覆盖中间状态和最终状态。
 

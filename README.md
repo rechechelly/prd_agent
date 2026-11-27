@@ -34,6 +34,9 @@ npm start
 - **HTML** 是单文件原型。Raw Text 编辑源码并展示 Agent 提议的差异，渲染模式预览修改效果。可以逐处保留或放弃修改。
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
 - **Agent 对话**默认携带当前文件上下文，可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
+- **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击「针对选区提问」，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
+- **会话**归属于发起对话的文件。同一文件可以开多个会话；从 A 修改 B 时，在 B 中审阅修改，执行记录留在 A。输入框上边缘可拖动调高，输入 Markdown 后可点击「预览」。
+- **分享**通过「分享」中的开关控制。关闭立即撤销链接访问，重新开启可继续使用原链接。
 - **技能**在「工作区设置 → Agent 工具与技能」管理。仓库附带可替换的 `prd-writing` 技能，指导 Agent 交付可交互 HTML 和图文 PRD。用户可导入其他技能包。
 
 ## 代码结构和二次开发
@@ -58,9 +61,22 @@ npm start
 
 **修改循环。** Pi 的 `maxTurns` 默认为 `null`，工具串行执行，启用原生重试与上下文压缩。应用另有针对错误工具结果、纯文本截断和无进展续写的限制。循环策略集中在 `loopPolicy`。一次输出被截断与上下文总窗口溢出走不同的处理路径。
 
-**增加工具。** 将模型可读的用途加入 `toolDescriptions`，在 `createAgentTools` 中声明 schema 并实现执行结果。文件修改通过现有工作区文件接口登记，确保预览、审阅和目标路径一致。工具错误通过 Pi 的工具结果反馈给模型。当前工具包括 `list_file`、`read_file`、`write_file`、`edit_file`、`draw_canvas`、`bash`、`skill_load`、`read_resource`、`embed_view_screenshots` 和 `compact_context`。最后一项由应用封装，调用 Pi 原生压缩机制。Bash 工具在任务专属目录内执行。
+### 工具如何选择
 
-**增加技能。** 每个技能一个目录，入口为 `SKILL.md`，YAML frontmatter 至少包含 `name` 和 `description`，参考资料可放入同包的 `references/`。发现阶段向模型提供元数据，匹配后由 `skill_load` 加载正文，`read_resource` 读取包内资源，也可在对话中显式指定 `/skill:名称`。额外文件系统搜索路径可通过 `XUYE_SKILL_DIRS` 配置。
+| 操作对象 | 工具 | 标识和用途 |
+| --- | --- | --- |
+| 在线工作区 | `list_file`、`read_file`、`write_file`、`edit_file` | 使用文件 ID 或文件树路径。读取和修改默认定位当前文件。新增文件通过类型、路径或父级指定位置。 |
+| 在线画布和 PRD | `draw_canvas`、`embed_view_screenshots` | 按在线文件定位画布，或把配套 HTML 截图嵌入指定文档。 |
+| 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 制作本地草稿，用 Bash 运行脚本或解析二进制原件。 |
+| 技能与会话 | `skill_load`、`install_skill`、`compact_context` | 加载技能入口、按清单安装任务内的技能包、请求 Pi 压缩上下文。 |
+
+例如，`read_file({id:"A"})` 读在线文档 A。`read({path:"upload-….txt"})` 读上传附件的解析文本。`write({path:"draft.html",content:"…"})` 保存任务草稿。如需将该草稿提交给用户审阅，调用 `edit_file({id:"A",source:"draft.html"})`。若明确要求创建独立的 HTML，使用 `write_file({type:"html",path:"/原型",source:"draft.html"})`。
+
+新增工具时，在 `shared/agent-catalog.mjs` 声明用途和分组，并在 `server/agent/tools.mjs` 注册。在线文件工具由 `server/workspace/` 实现；Pi 原生文件工具的任务路径适配在 `server/runtime/file-tools.mjs`。工具错误进入 Pi 工具结果，模型可据此修正并重试。
+
+### 添加技能
+
+每个技能以 `SKILL.md` 为入口，YAML frontmatter 至少包含 `name` 和 `description`。发现阶段只提供元数据。匹配后，`skill_load` 返回入口正文和基准路径。Agent 可按入口说明用 `read` 打开 `skills/<name>/references/…`，用 Bash 执行 `skills/<name>/scripts/…`。显式指定 `/skill:名称` 会随当前请求加载入口。已加载的技能包以只读方式提供，编写新技能时在任务目录下建立草稿并用 `install_skill` 保存。额外技能搜索路径通过 `XUYE_SKILL_DIRS` 配置。
 
 ## HTTP 接口
 
@@ -79,8 +95,8 @@ npm start
 | POST `api/agent/pause`、GET `api/agent/history` | 以 `doc` 和 `chatId` 定位会话，暂停携带对应 `attemptId`，历史支持通过 `tool` 查询工具明细 |
 | GET `api/agent-catalog`、POST `api/skills/import`、POST `api/skills/delete`、GET `api/skills/export` | 工具与技能目录、技能包导入导出 |
 | POST `api/attachments?name=…` | 上传附件字节，单文件上限 20 MB |
-| POST `api/share`、GET `s/{token}` | 创建分享及打开公开评审，相关公开接口位于 `api/public/{token}` |
+| POST `api/share`、GET `s/{token}` | 发送 `{doc,lookup:true}` 查询状态，`{doc,enabled:true/false}` 开关链接。可指定 `file` 和 `version`。公开评审数据位于 `api/public/{token}` |
 
 ## 版本与许可证
 
-开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v1.0.2`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。
+开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v1.0.3`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。

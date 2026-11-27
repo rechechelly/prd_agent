@@ -1936,3 +1936,24 @@ button.danger:hover {
 #messageQueue li { padding: 3px 0; }
 #messageQueue li span { display: inline-block; width: calc(100% - 6em); vertical-align: middle; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #messageQueue button { color: var(--purple); font-size: inherit; padding: 3px 6px; }
+
+#askForm textarea, #questionPreview {
+  height: var(--question-height, 70px);
+}
+#questionPreview { overflow: auto; margin: 0; font-size: 14px; }
+#composerGrip {
+  display: grid; place-items: center; width: 100%; height: 10px;
+  margin: -7px 0 2px; cursor: ns-resize; touch-action: none;
+}
+#composerGrip::after { content: ""; width: 34px; height: 3px; background: #d6d3df; border-radius: 4px; }
+#composerGrip:is(:hover, :focus-visible)::after { background: var(--purple); }
+#previewQuestion { font-size: 12px; white-space: nowrap; padding: 4px; }
+.userTurn .questionBody { white-space: normal; padding: 0; margin: 0; color: inherit; }
+.questionBody > :first-child, #questionPreview > :first-child { margin-top: 0; }
+.questionBody > :last-child { margin-bottom: 0; }
+.shareSetting { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+#fields #shareEnabled { width: 36px; height: 21px; appearance: none; border-radius: 20px; padding: 2px; background: #b8b4bf; cursor: pointer; }
+#shareEnabled::before { content: ""; display: block; width: 15px; height: 15px; background: white; border-radius: 50%; }
+#fields #shareEnabled:checked { background: var(--purple); }
+#shareEnabled:checked::before { transform: translateX(14px); }
+#agentToolList .toolGroup { color: var(--purple); border-bottom: 1px solid var(--line); padding: 8px 0 5px; }

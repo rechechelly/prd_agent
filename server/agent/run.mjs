@@ -1,3 +1,4 @@
+import { selectionScope } from "./selection.mjs";
 import { maskImages, prepareReferences } from "./context.mjs";
 import { conversationFor } from "./conversation.mjs";
 import { createAgentTools, toolReply } from "./tools.mjs";
@@ -38,8 +39,7 @@ import {
   hook,
   hookTask,
 } from "@earendil-works/pi-durable";
-import { openChatHarness, closeChatHarness, consumeQueued } from "./queue.mjs";
-import { resolveFile } from "../../shared/assistant-context.mjs";
+import { openChatHarness, closeChatHarness, consumeQueued, messageQueue } from "./queue.mjs";
 import { directory, fault, seal, unseal } from "../storage.mjs";
 const active = new Map();
 const validId = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
@@ -105,6 +105,16 @@ export async function runAgent(
     } else stage = await createStage();
     const { html, images } = maskImages(doc.html || ""),
       files = Object.create(null);
+    let scope;
+    try {
+      scope = selectionScope(req.refs, ownerId, doc);
+    } catch (error) {
+      if (req.queued && error.status) {
+        await messageQueue(identity, "rejectSelection", { requestId });
+        error.selectionExpired = true;
+      }
+      throw error;
+    }
     const baseImageCount = images.length;
     images.push(...(saved?.extraImages || []));
     files["current.html"] = saved?.current ?? html;
@@ -121,21 +131,6 @@ export async function runAgent(
     const skillSet = skillRuntime(catalog, priorSkills);
     for (const name of saved?.skills || [])
       if (catalog.skills.has(name)) skillSet.active.add(name);
-    files["index.json"] = JSON.stringify(
-      docs.map((d, i) => ({
-        id: d.id,
-        parent: d.parent || "",
-        type: d.type,
-        title: d.title,
-        file: "doc-" + i + ".html",
-      })),
-    );
-    docs.forEach(
-      (d, i) =>
-        (files["doc-" + i + ".html"] = maskImages(
-          resolveFile(docs, { id: d.id }).content || "",
-        ).html),
-    );
     const earlierRefs = saved?.earlierRefs || [];
     if (saved && !continuing) earlierRefs.push(...saved.refs);
     const references = prepareReferences(
@@ -156,7 +151,7 @@ export async function runAgent(
               .map((r) => ({ ...r, historyOnly: true })),
           ),
       ],
-      files,
+      files, scope,
     );
     const { env, inputs, mountSkills, writeSnapshot } = await taskEnvironment(
       stage,
@@ -171,6 +166,7 @@ export async function runAgent(
       drawing = { patch: saved?.drawing };
     async function writeCurrent(value) {
       const count = images.length;
+      if (scope) scope.read(value);
       const masked = maskImages(value, images).html;
       for (let i = count; i < images.length; i++)
         await writeSnapshot(
@@ -219,16 +215,14 @@ export async function runAgent(
     });
     const taskTools = createAgentTools({
       creation,
+      scope,
       skillSet,
       mountSkills,
-      images,
-      references,
       files,
       inputs,
       network,
       compactTool,
       toolCalls,
-      doc,
       env,
       writeCurrent,
       progress,
@@ -296,7 +290,7 @@ export async function runAgent(
               correctionCount++;
               progress?.({ label: "正在核对工具结果并修正" });
               return {
-                continue: correctToolResult,
+                continue: scope ? "查看工具结果。答疑直接回答，修改使用 edit_file 的 content 替换指定选区；请保留选区内标签。" : correctToolResult,
               };
             }
           },
@@ -327,6 +321,7 @@ export async function runAgent(
         canvas,
         skills: skillSet.instructions,
         doc,
+        scoped: !!scope,
         hasPictures: !!references.pictures.length,
         externalApi: req.externalApi,
       }),
@@ -464,9 +459,6 @@ export async function runAgent(
     }
     const answerFragments = continuing ? saved.fragments : [];
     savePause = async () => {
-      // A cancelled shell command may have only partly written the working HTML.
-      if (doc.type === "交互 HTML")
-        await writeSnapshot("current.html", files["current.html"]);
       const snapshot = randomUUID() + ".json";
       await fs.writeFile(
         path.join(stage, snapshot),
@@ -614,7 +606,7 @@ export async function runAgent(
           ? await root.fork(checkpoint, ownership, ctx)
           : await h.createConversation(ownership, ctx);
         await root.configure(config, ctx);
-        resume = continuationInput(cut, prompt, content);
+        resume = continuationInput(cut, prompt, content, !!scope);
       }
       const retry = await root.submit(
         { type: "input", requestId: randomUUID(), content: resume },

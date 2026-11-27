@@ -66,6 +66,7 @@ export function dialog(title, fields, callback, action = "确定") {
   $("cancel").textContent = "取消";
   $("modalTitle").textContent = title;
   $("fields").innerHTML = fields;
+  $("submit").hidden = false;
   $("submit").textContent = action;
   $("submit").classList.toggle("danger", action === "删除");
   $("modal").showModal();

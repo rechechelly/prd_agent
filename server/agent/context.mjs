@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { fileKey, resolveFile } from "../../shared/assistant-context.mjs";
-import { attachment, imageAttachment } from "../attachments/attachments.mjs";
+import { attachment, attachmentBytes, imageAttachment } from "../attachments/attachments.mjs";
 import { fault } from "../storage.mjs";
 export function maskImages(html, images = []) {
   return {
@@ -11,11 +11,10 @@ export function maskImages(html, images = []) {
     images,
   };
 }
-export function prepareReferences(docs, refs, files) {
+export function prepareReferences(docs, refs, files, scope) {
   if (!Array.isArray(refs)) fault("引用格式有误");
   const list = [],
     pictures = [],
-    olderImages = new Map(),
     seen = new Set(),
     assets = new Map();
   // Keep the initial message small. All selected sources remain readable in full.
@@ -23,7 +22,15 @@ export function prepareReferences(docs, refs, files) {
     pictureBytes = 0;
   for (const ref of refs) {
     if (!ref || typeof ref !== "object") fault("引用格式有误");
-    let title, content, file;
+    let title, content, file, originalFile;
+    if (ref.kind === "range") {
+      if (ref.historyOnly || !scope) continue;
+      file = "selection-target.html";
+      files[file] = scope.fragment;
+      list.push({ title: ref.title, fileId: ref.id, start: ref.start, end: ref.end, unit: "UTF-16，原始源码，左闭右开",
+        file, text: ref.text.slice(0, 2000), fragment: scope.fragment.slice(0, 4000) });
+      continue;
+    }
     if (ref.kind === "image") {
       const key = "upload-" + ref.id;
       if (seen.has(key)) continue;
@@ -36,7 +43,7 @@ export function prepareReferences(docs, refs, files) {
         ...(ref.historyOnly && { historyOnly: true }),
       });
       if (ref.historyOnly) {
-        olderImages.set(file, ref.id);
+        files[file] = () => imageAttachment(ref.id).bytes;
         continue;
       }
       pictureBytes += image.bytes.length;
@@ -54,7 +61,12 @@ export function prepareReferences(docs, refs, files) {
       const key = "upload-" + ref.id;
       if (seen.has(key)) continue;
       seen.add(key);
-      ({ title, content } = attachment(ref.id));
+      const item = attachment(ref.id);
+      ({ title, content } = item);
+      if (item.hasOriginal) {
+        originalFile = key + "." + title.split(".").at(-1).toLowerCase();
+        files[originalFile] = () => attachmentBytes(ref.id);
+      }
       file = key + ".txt";
     } else if (ref.kind === "file") {
       const source = resolveFile(docs, ref);
@@ -66,17 +78,27 @@ export function prepareReferences(docs, refs, files) {
       const stem =
         "xuye-ref-" +
         createHash("sha256").update(key).digest("hex").slice(0, 20);
-      file = stem + ".html";
       let i = 0;
-      content = source.content.replace(
+      const imageFiles = [];
+      content = (source.content || "").replace(
         /data:image\/([\w.+-]+);base64,([a-z\d+/=]+)/gi,
         (url, mime, data) => {
           const image = stem + "-" + ++i + "." + mime.toLowerCase();
+          imageFiles.push(image);
           files[image] = Buffer.from(data, "base64");
           assets.set(image, url);
           return image;
         },
       );
+      const reader = { id: ref.id, ...(ref.version !== undefined && { version: ref.version, file: ref.file }) };
+      const reference = { title, read_file: reader };
+      if (imageFiles.length) reference.imageFiles = imageFiles;
+      if (!ref.historyOnly && content.length <= remaining) {
+        reference.content = content;
+        remaining -= content.length;
+      }
+      list.push(reference);
+      continue;
     } else {
       if (typeof ref.text !== "string") fault("选区引用缺少正文");
       title = String(ref.title || "选区");
@@ -84,12 +106,12 @@ export function prepareReferences(docs, refs, files) {
       file = "selection-" + (list.length + 1) + ".txt";
     }
     files[file] = content;
-    const reference = { title, file };
+    const reference = { title, file, ...(originalFile && { originalFile }) };
     if (!ref.historyOnly && content.length <= remaining) {
       reference.content = content;
       remaining -= content.length;
     }
     list.push(reference);
   }
-  return { list, assets, pictures, olderImages };
+  return { list, assets, pictures };
 }

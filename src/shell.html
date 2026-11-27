@@ -146,6 +146,7 @@
               <section id="messageQueue" aria-label="待发送消息" hidden></section>
               <form id="askForm">
                 <input id="chatFiles" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx" multiple hidden />
+                <div id="composerGrip" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="调整输入框高度" aria-valuemin="62" title="拖动调整输入框高度"></div>
                 <div id="references"></div>
                 <textarea
                   id="question"
@@ -153,6 +154,7 @@
                   placeholder="提问或描述想修改的内容…"
                   required
                 ></textarea>
+                <div id="questionPreview" class="agentReply" aria-label="Markdown 预览" hidden></div>
                 <div class="composerTools">
                   <details id="agentContextInfo">
                     <summary title="上下文与工具" aria-label="上下文与工具">
@@ -168,7 +170,7 @@
                           <code>read_file</code> 读取图层和连线，<code
                             >draw_canvas</code
                           >
-                          提交绘图预览，<code>read_resource</code> 和
+                          提交绘图预览，<code>read</code> 和
                           <code>bash</code> 可查阅引用资料。
                         </p>
                       </div>
@@ -179,12 +181,13 @@
                         </p>
                         <p>粘贴图片、拖入文件或正文选区，即可加入本次提问。</p>
                         <p>
-                          <code>list_file</code> 查看目录，<code>read_file</code> 读取正文，<code>write_file</code> 创建文件，<code>edit_file</code> 修改已有文件。正文修改由你采纳。
+                          <code>list_file</code> 查看目录，<code>read_file</code> 读取正文，<code>write_file</code> 创建文件，<code>edit_file</code> 修改已有文件。正文修改由你采纳。附件和技能包内文件使用任务目录中的 <code>read</code>，脚本由 <code>bash</code> 执行。
                         </p>
                       </div>
                     </div>
                   </details>
                   <button type="button" id="agentModel" aria-label="选择助手模型" aria-haspopup="dialog">离线演示</button>
+                  <button type="button" id="previewQuestion" title="Markdown 预览" aria-pressed="false">预览</button>
                   <button
                     type="button"
                     id="attachContext"
@@ -228,7 +231,7 @@
           <div id="resultRail" class="editorRail">
             <div id="htmlModes" role="group" aria-label="HTML 编辑模式" hidden>
               <button id="renderMode">渲染模式</button
-              ><button id="sourceMode">Raw Text</button>
+              ><button id="sourceMode">Raw Text</button><button id="quoteSource" hidden>问 Agent</button>
             </div>
           </div>
           <h2 id="resultName"></h2>

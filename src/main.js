@@ -8,8 +8,10 @@ import { installBlockTools } from "./editor/block-tools";
 import { installDocumentOutline } from "./editor/document-outline";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
 import { sceneVersion } from "../shared/canvas-model.mjs";
-import { sessions, selectedSession, sessionName } from "./chat/chat-sessions";
-import { toolDescriptions } from "../shared/agent-catalog.mjs";
+import { sessions, selectedSession, sessionName, migrateExternalReviews } from "./chat/chat-sessions";
+import { installComposer } from "./chat/composer";
+import { documentRange, rawRange, rangeReference } from "./editor/selection-reference";
+import { toolDescriptions, toolGroups } from "../shared/agent-catalog.mjs";
 import { planEdits, wireEdits } from "./editor/edit-comparison";
 import deltaStyle from "./editor/inline-review-style.txt";
 import { contextTransfer, fileKey, resolveFile } from "../shared/assistant-context.mjs";
@@ -101,7 +103,7 @@ const sending = new Map();
 const edits = new WeakMap();
 const composers = new WeakMap();
 const pendingUploads = new WeakMap();
-let currentComposer;
+let currentComposer, editComposer;
 function switchComposer(target) {
   if (currentComposer === target) return;
   if (currentComposer)
@@ -109,6 +111,7 @@ function switchComposer(target) {
       question: $("question").value,
       refs: quoted,
     });
+  editComposer?.();
   currentComposer = target;
   const state = target && composers.get(target);
   quoted = state?.refs || [];
@@ -119,7 +122,29 @@ function switchComposer(target) {
 function snapshot() {
   return { docs, folders, completionEnabled };
 }
+async function quoteSelection(selection) {
+  if (!online) return toast("请在登录版工作台使用划词提问");
+  const file = doc, session = currentComposer, source = file.html;
+  try {
+    const range = file.type === "交互 HTML"
+      ? rawRange($("htmlInput"), source)
+      : documentRange(editor, source, selection);
+    const ref = await rangeReference(file, range, source);
+    if (session !== currentComposer || file !== doc || source !== file.html) return;
+    quoted = quoted.filter(item => item.kind !== "range");
+    quoted.push(ref);
+    openAgent = true;
+    header();
+    editComposer?.();
+    renderQuotes();
+    $("question").focus();
+  } catch (error) { toast(error.message); }
+}
 function referenceLabel(ref) {
+  if (ref.kind === "range") {
+    const excerpt = ref.text.replace(/\s+/g, " ").trim();
+    return "选区 · " + excerpt.slice(0, 16) + (excerpt.length > 16 ? "…" : "");
+  }
   if (ref.kind === "upload" || ref.kind === "image") return ref.title;
   return ref.kind === "file"
     ? resolveFile(docs, ref)?.title || ref.title
@@ -191,7 +216,7 @@ function renderQuotes() {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "ref";
-    b.title = (ref.text || referenceLabel(ref)) + " · 点击移除";
+    b.title = (ref.kind === "range" ? referenceLabel(ref) : ref.text || referenceLabel(ref)) + " · 点击移除";
     if (ref.kind === "image") {
       b.append(imageThumbnail(ref), " ×");
       b.setAttribute("aria-label", "移除图片 " + ref.title);
@@ -220,6 +245,10 @@ function setHtmlMode(raw) {
   if (raw) previewOriginal = false;
   reviewDraft();
 }
+function refreshSourceQuote() {
+  const input = $("htmlInput");
+  $("quoteSource").hidden = $("htmlSourceEditor").hidden || input.selectionStart === input.selectionEnd;
+}
 function updateHtmlView(sourceDiff, renderSource = doc.html) {
   $("renderMode").setAttribute("aria-pressed", String(!rawMode));
   $("sourceMode").setAttribute("aria-pressed", String(rawMode));
@@ -237,13 +266,13 @@ function updateHtmlView(sourceDiff, renderSource = doc.html) {
   $("htmlDiff").hidden = !rawMode || !sourceDiff;
 
   if (rawMode && !sourceDiff) writeSource(doc.html);
+  refreshSourceQuote();
 }
 function reviewDraft(focusIndex) {
   const target = chatTarget();
 
-  const pending = selectedSession(target)?.messages.findLast(
-    (m) => typeof m.proposed === "string" && !m.resolved,
-  );
+  const pending = selectedSession(target)?.messages.findLast(m => typeof m.proposed === "string" && !m.resolved)
+    || target?.externalReviews?.find(m => typeof m.proposed === "string" && !m.resolved);
   const isHtml = page === "result" && target?.type === "交互 HTML";
   const preview = $(isHtml ? "htmlDiff" : "draftPreview");
   const review = $("agentReview");
@@ -277,7 +306,8 @@ function reviewDraft(focusIndex) {
   const plan = editPlans.get(pending),
     previousChoices = pending.reviewChoices,
     choices = previousChoices || {};
-  const remaining = plan.count - Object.keys(choices).length;
+  const scopedDocument = !isHtml && pending.refsUsed?.some(r => r.kind === "range");
+  const remaining = scopedDocument ? 1 : plan.count - Object.keys(choices).length;
   if (isHtml) {
     const renderSource = stale
       ? target.html
@@ -301,6 +331,7 @@ function reviewDraft(focusIndex) {
     bar.append(button);
   };
   function decide(id, keep) {
+    if (scopedDocument) id = null;
     if (
       target !== chatTarget() ||
       pending.resolved ||
@@ -322,7 +353,7 @@ function reviewDraft(focusIndex) {
         next[i] = keep ? "keep" : "undo";
     const done = id === null || Object.keys(next).length === plan.count;
     if (keep) {
-      const clean = plan.count
+      const clean = plan.count && !scopedDocument
         ? plan.content((i) => next[i] || "undo")
         : pending.proposed;
       if (isHtml) doc.html = clean;
@@ -330,7 +361,7 @@ function reviewDraft(focusIndex) {
         editor.commands.setContent(DOMPurify.sanitize(clean), {
           emitUpdate: false,
         });
-        doc.html = editor.getHTML();
+        doc.html = scopedDocument ? pending.proposed : editor.getHTML();
       }
       if (!done) pending.reviewCurrent = targetContent(target);
     }
@@ -553,7 +584,8 @@ function show(p) {
 let mountedBoard, mountedPatch;
 function updateBoard() {
   const session = selectedSession(doc),
-    msg = session.messages.findLast((m) => m.canvasPatch && !m.resolved);
+    msg = session.messages.findLast((m) => m.canvasPatch && !m.resolved)
+      || doc.externalReviews?.find(m => m.canvasPatch && !m.resolved);
   const bar = $("boardReview");
   const stale = msg && sceneVersion(doc.scene) !== msg.canvasBase;
   const patch = !stale && msg ? msg.canvasPatch : null;
@@ -728,6 +760,9 @@ function create(parent = "") {
 }
 function migrateDirectory() {
   let migrated = false;
+  for (const file of [...docs, ...folders]) {
+    if (migrateExternalReviews(file)) migrated = true;
+  }
   const groups = new Map();
   const locations = [...docs, ...folders];
   for (const owner of docs)
@@ -881,6 +916,46 @@ function markdownHTML(text) {
   );
   return container.innerHTML;
 }
+function renderChatMarkdown(reply, value) {
+  try {
+    reply.innerHTML = DOMPurify.sanitize(markdownHTML(value), {
+      ALLOWED_TAGS: [
+        "p",
+        "br",
+        "strong",
+        "em",
+        "s",
+        "blockquote",
+        "ul",
+        "ol",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "pre",
+        "code",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        "hr",
+        "a",
+      ],
+      ALLOWED_ATTR: ["href", "start"],
+    });
+    for (const a of reply.querySelectorAll("a")) {
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+    }
+  } catch {
+    reply.textContent = value;
+  }
+}
 function selectChat(file, session) {
   file.selectedChat = session.id;
   session.closed = false;
@@ -970,10 +1045,8 @@ function mountQuestionEditor(box, session, message) {
   box.replaceChildren(form);
 }
 function openChatHistory() {
-  const entries = [];
-  for (const file of docs)
-    if (file.chatSessions || file.messages?.length)
-      for (const session of sessions(file)) entries.push({ file, session });
+  const file = chatTarget();
+  const entries = sessions(file).map(session => ({ file, session }));
   entries.sort((a, b) => b.session.updatedAt - a.session.updatedAt);
   const list = $("historyList");
   list.replaceChildren();
@@ -1049,7 +1122,17 @@ async function openAgentSettings() {
     ]) {
       const list = $(id);
       list.replaceChildren();
-      for (const item of items) {
+      const rows = id === "agentToolList"
+        ? Object.entries(toolGroups).flatMap(([group, names]) => names.map(name => ({ ...items.find(i => i.name === name), group })).filter(i => i.name))
+        : items;
+      let lastGroup;
+      for (const item of rows) {
+        if (item.group && item.group !== lastGroup) {
+          const label = document.createElement("dt");
+          label.className = "toolGroup";
+          label.textContent = lastGroup = item.group;
+          list.append(label);
+        }
         const name = document.createElement("dt"),
           detail = document.createElement("dd");
         name.textContent = item.title
@@ -1166,7 +1249,7 @@ function chat(focusIndex) {
   if (pending) messages.push(pending);
   if (online) {
     const state = queueState(session);
-    const blocked = hasProposal(session);
+    const blocked = hasProposal(file, session.messages);
     renderQueue(session, pending, blocked, item => prioritize(file, session, item));
     if (!state.initialized) {
       state.initialized = true;
@@ -1217,7 +1300,10 @@ function chat(focusIndex) {
     block.className = "msg";
     const question = document.createElement("div");
     question.className = "userTurn";
-    question.textContent = m.q;
+    const body = document.createElement("div");
+    body.className = "agentReply questionBody";
+    renderChatMarkdown(body, m.q || "");
+    question.append(body);
     block.append(question);
     if (!pending && !m.failure && !m.control) {
       const edit = document.createElement("button");
@@ -1315,44 +1401,7 @@ function chat(focusIndex) {
       }
       const reply = document.createElement("div");
       reply.className = "agentReply";
-      try {
-        reply.innerHTML = DOMPurify.sanitize(markdownHTML(m.answer || ""), {
-          ALLOWED_TAGS: [
-            "p",
-            "br",
-            "strong",
-            "em",
-            "s",
-            "blockquote",
-            "ul",
-            "ol",
-            "li",
-            "h1",
-            "h2",
-            "h3",
-            "h4",
-            "h5",
-            "h6",
-            "pre",
-            "code",
-            "table",
-            "thead",
-            "tbody",
-            "tr",
-            "th",
-            "td",
-            "hr",
-            "a",
-          ],
-          ALLOWED_ATTR: ["href", "start"],
-        });
-        for (const a of reply.querySelectorAll("a")) {
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-        }
-      } catch {
-        reply.textContent = m.answer;
-      }
+      renderChatMarkdown(reply, m.answer || "");
       block.append(reply);
       const actions = document.createElement("div");
       actions.className = "replyActions";
@@ -1428,8 +1477,9 @@ function chat(focusIndex) {
 function refreshChat(file, session) {
   if (chatTarget() === file && selectedSession(file) === session) chat();
 }
-function hasProposal(session) {
-  return session.messages.some(m => (typeof m.proposed === "string" || m.canvasPatch) && !m.resolved);
+function hasProposal(file, messages) {
+  return [...messages, ...(file.externalReviews || [])]
+    .some(m => (typeof m.proposed === "string" || m.canvasPatch) && !m.resolved);
 }
 function interrupt(pending) {
   if (pending.pausing || pending.ending) return;
@@ -1459,12 +1509,13 @@ async function prioritize(file, session, item) {
 function drainQueue(file, session) {
   const state = queueState(session);
   if (sending.has(session) || state.loading || state.promoting || state.stopped ||
-      !state.items.length || hasProposal(session) || (!docs.includes(file) && !folders.includes(file))) return;
+      !state.items.length || hasProposal(file, session.messages) || (!docs.includes(file) && !folders.includes(file))) return;
   const item = state.items[0];
   runQuestion(file, session, item.question, undefined, item.refs, undefined, item);
 }
 async function ask(q, editIndex, editRefs, resume) {
   if (!doc || !q.trim()) return;
+  editComposer?.();
   const file = chatTarget(), session = selectedSession(file);
   if (pendingUploads.get(session)) return toast("附件解析完成后即可发送");
   if (!online || editIndex !== undefined || resume) {
@@ -1510,11 +1561,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
     0,
     editIndex ?? session.messages.length,
   );
-  if (
-    prefix.some(
-      (m) => (typeof m.proposed === "string" || m.canvasPatch) && !m.resolved,
-    )
-  ) {
+  if (hasProposal(owner, prefix)) {
     toast("请先处理当前文件中的待采纳修改");
     return;
   }
@@ -1631,8 +1678,8 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
       }
     } catch (e) {
       const error = pending.controller.signal.reason?.message || e.message;
-      queueState(session).stopped = true;
-      if (!queued || pending.canPause) (session.failedAttempts ||= []).push({ ...msg, failure: error });
+      queueState(session).stopped = !e.selectionExpired;
+      if (!queued || pending.canPause || e.selectionExpired) (session.failedAttempts ||= []).push({ ...msg, failure: error });
       else session.lastAgentFailure = error;
       session.updatedAt = Date.now();
       changed();
@@ -1701,30 +1748,31 @@ async function shareFile() {
   button.disabled = true;
   try {
     await flush();
-    const { url } = await api("share", ref);
-    dialog(
-      "分享「" + title + "」",
-      '<label for="fileShareUrl">' +
-        (doc.type === "文件夹"
-          ? "链接展示此文件夹的目录清单"
-          : "任何获得链接的人均可查看此文件") +
-        '</label><input id="fileShareUrl" readonly value="' +
-        esc(url) +
-        '">',
+    let state = await api("share", { ...ref, lookup: true });
+    dialog("分享「" + title + "」",
+      '<label class="shareSetting"><span>开启链接分享</span><input type="checkbox" role="switch" id="shareEnabled"></label><input aria-label="分享链接" id="fileShareUrl" readonly>',
       () => {
-        navigator.clipboard
-          .writeText(url)
-          .then(() => toast("链接已复制"))
-          .catch(() => {
-            $("fileShareUrl").select();
-            toast("请复制选中的链接");
-          });
+        navigator.clipboard.writeText(state.url).then(() => toast("链接已复制"))
+          .catch(() => { $("fileShareUrl").select(); toast("请复制选中的链接"); });
         return false;
-      },
-      "复制链接",
-    );
+      }, "复制链接");
+    const toggle = $("shareEnabled"), link = $("fileShareUrl");
+    const refresh = () => {
+      toggle.checked = state.enabled;
+      link.hidden = $("submit").hidden = !state.enabled;
+      link.value = state.url || "";
+    };
+    refresh();
     $("cancel").textContent = "关闭";
-    $("fileShareUrl").select();
+    toggle.onchange = async () => {
+      toggle.disabled = true;
+      try { state = await api("share", { ...ref, enabled: toggle.checked }); }
+      catch (error) { toast(error.message); }
+      finally {
+        toggle.disabled = false;
+        if (toggle.isConnected) refresh();
+      }
+    };
   } catch (error) {
     toast(error.message);
   } finally {
@@ -1789,24 +1837,10 @@ function archiveWorkspaceFiles(output) {
     if (c.title !== undefined) f.title = c.title;
     if (c.parent !== undefined) f.parent = c.parent;
     if (c.html !== undefined || c.drawing) {
-      const id = crypto.randomUUID();
-      sessions(f).push({
-        id,
-        updatedAt: Date.now(),
-        messages: [
-          {
-            q: output.question,
-            answer: "文件修改已准备好，请预览并采用。",
-            createdAt: Date.now(),
-            ...(c.html !== undefined && { proposed: c.html, base: f.html }),
-            ...(c.drawing && {
-              canvasPatch: c.drawing,
-              canvasBase: c.base.scene,
-            }),
-          },
-        ],
+      (f.externalReviews ||= []).push({
+        ...(c.html !== undefined && { proposed: c.html, base: f.html }),
+        ...(c.drawing && { canvasPatch: c.drawing, canvasBase: c.base.scene }),
       });
-      f.selectedChat = id;
     }
     f.workspaceChangeRun = output.runId;
   }
@@ -1956,7 +1990,12 @@ async function setup() {
     },
     onBlur: hideSuggestion,
   });
-  installBlockTools(editor, () => $("file").click());
+  editComposer = installComposer(renderChatMarkdown);
+  installBlockTools(editor, () => $("file").click(), quoteSelection);
+  $("htmlInput").addEventListener("select", refreshSourceQuote);
+  $("htmlInput").addEventListener("selectionchange", refreshSourceQuote);
+  $("quoteSource").onmousedown = e => e.preventDefault();
+  $("quoteSource").onclick = () => quoteSelection();
   installDocumentOutline(editor.view.dom);
   editor.view.dom.addEventListener("compositionstart", () => {
     completion.composition(true);

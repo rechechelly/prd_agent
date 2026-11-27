@@ -67,7 +67,7 @@ export function resizeImageColumn(editor, cell, width, tr) {
   }
 }
 
-export function installBlockTools(editor, chooseImage) {
+export function installBlockTools(editor, chooseImage, quoteSelection) {
   const root = editor.view.dom,
     overlay = document.createElement("div");
   overlay.className = "blockTools";
@@ -81,7 +81,7 @@ export function installBlockTools(editor, chooseImage) {
     b.onclick = click;
     return b;
   };
-  installTextToolbar(editor, button, installBlockSelection(editor));
+  installTextToolbar(editor, button, installBlockSelection(editor), quoteSelection);
   const handle = button("段落工具", "+ ", () => showMenu());
   handle.className = "blockHandle";
   handle.onmouseenter = () => showMenu();

@@ -1,21 +1,12 @@
-import { createReadTool } from "@earendil-works/pi-durable/tools";
 import { defineTool } from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
-import path from "node:path";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { drawCanvasTool } from "../workspace/canvas-tools.mjs";
 import { renderDelivery } from "../render.mjs";
 import { discoverSkills } from "../skills.mjs";
-import { imageAttachment } from "../attachments/attachments.mjs";
-import { taskBash, readScratchFile } from "../runtime/task-environment.mjs";
+import { taskFileTools } from "../runtime/file-tools.mjs";
+import { taskBash } from "../runtime/task-environment.mjs";
 import { diagnostic } from "./stream.mjs";
-const resourceReader = createReadTool();
-const readResource = {
-  ...resourceReader,
-  name: "read_resource",
-  description:
-    "读取附件、选区、引用图片，以及已加载技能的参考文件；path 使用提示提供的资源名，offset、limit 按行计。",
-};
 export const toolReply = (text, isError = false) => ({
   output: [{ type: "text", text }],
   isError,
@@ -25,7 +16,7 @@ export function agentCatalog() {
   return {
     tools: Object.entries(toolDescriptions).map(([name, description]) => ({
       name,
-      description: name === "bash" ? taskBash().description : description,
+      description,
     })),
     skills: [...skills.values()].map(({ name, description, file }) => ({
       name,
@@ -38,16 +29,14 @@ export function agentCatalog() {
 
 export function createAgentTools({
   creation,
+  scope,
   skillSet,
   mountSkills,
-  images,
-  references,
   files,
   inputs,
   network,
   compactTool,
   toolCalls,
-  doc,
   env,
   writeCurrent,
   progress,
@@ -55,6 +44,7 @@ export function createAgentTools({
 }) {
   const availableTools = [
     ...creation.tools,
+    ...taskFileTools(env.cwd, inputs),
     defineTool({
       name: "embed_view_screenshots",
       description: toolDescriptions.embed_view_screenshots,
@@ -92,55 +82,26 @@ export function createAgentTools({
         }
       },
     }),
-    {
-      ...readResource,
-      async execute(args, api, context) {
-        const name = path.posix.resolve("/", args.path).slice(1);
-        if (/^skills\/[^/]+\/SKILL\.md$/.test(name))
-          return toolReply(
-            "加载技能正文请调用 skill_load，并传入技能名称。",
-            true,
-          );
-        const asset = /^xuye-asset-([1-9]\d*)$/.exec(name);
-        if (asset) {
-          const url = images[Number(asset[1]) - 1];
-          if (!url) return toolReply("当前文档没有这张配图。", true);
-          const [, mimeType, data] = /^data:([^;]+);base64,(.*)$/is.exec(url);
-          return { output: [{ type: "image", mimeType, data }] };
-        }
-        if (references.olderImages.has(name)) {
-          const image = imageAttachment(references.olderImages.get(name));
-          return {
-            output: [
-              {
-                type: "image",
-                mimeType: image.mime,
-                data: Buffer.from(image.bytes).toString("base64"),
-              },
-            ],
-          };
-        }
-        const resource = name.startsWith("skills/")
-          ? skillSet.resource(name)
-          : Object.hasOwn(files, name) &&
-            /^(?:upload-|selection-|xuye-ref-)/.test(name);
-        if (!resource)
-          return toolReply(
-            "请用 read_file 读取工作区文件或交付草稿，list_file 查看目录。",
-            true,
-          );
-        return readResource.execute(
-          { ...args, path: path.join(inputs, name) },
-          api,
-          context,
-        );
-      },
-    },
     taskBash(network.vars),
     drawCanvasTool(creation),
     compactTool,
   ];
-  return availableTools.map((tool) => ({
+  const tools = scope ? availableTools.filter(tool =>
+    ["read", "read_file", "list_file", "skill_load", "compact_context"].includes(tool.name)
+  ).concat(defineTool({
+    name: "edit_file",
+    description: "仅替换本次划词选区。content 是完整的新选区片段，无需提供全文或目标 ID。保留文档片段中的原有标签。HTML 源码选区按原样替换。",
+    parameters: obj({ content: str() }),
+    async execute({ content }) {
+      try {
+        const value = scope.replace(files["current.html"], content);
+        if (Buffer.byteLength(value) > 12_000_000) throw Error("单文件超过 12 MB");
+        await writeCurrent(value);
+        return toolReply("已在当前文件的指定选区提交修改，等待用户采用。");
+      } catch (error) { return toolReply(error.message, true); }
+    },
+  })) : availableTools;
+  return tools.map((tool) => ({
     ...tool,
     async execute(args, api, context) {
       const started = Date.now();
@@ -159,32 +120,6 @@ export function createAgentTools({
       progress?.({ label: "正在执行 " + action, tool: true });
       try {
         const result = await tool.execute(args, api, context);
-        if (
-          tool.name === "bash" &&
-          doc.type === "交互 HTML" &&
-          !result.isError
-        ) {
-          // Only the named working copy is a draft. Other shell files are scratch.
-          let scratch;
-          try {
-            scratch = await readScratchFile(env, "current.html");
-          } catch (error) {
-            if (error.code !== "ENOENT") throw error;
-          }
-          if (scratch && scratch.html !== files["current.html"]) {
-            await writeCurrent(scratch.html);
-            progress?.({ label: "当前 HTML 修改已进入待审阅草稿" });
-            result.diagnostics = [
-              ...(result.diagnostics || []),
-              {
-                severity: "info",
-                code: "html_draft",
-                message:
-                  "current.html 已同步为待审阅修改。完成必要检查后即可答复并交付此草稿。",
-              },
-            ];
-          }
-        }
         event.status = result.isError ? "failed" : "done";
         const exitCode = result.structuredOutput?.exitCode;
         if (

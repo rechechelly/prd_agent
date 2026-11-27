@@ -12,7 +12,7 @@ import {
 } from "./skills.mjs";
 import { findDelivery as findOutput } from "../shared/workspace-files.mjs";
 import {
-  createFileShare,
+  fileShareState,
   lookupFileShare,
   updateFileShares,
 } from "./file-shares.mjs";
@@ -261,7 +261,7 @@ const server = http.createServer(async (req, res) => {
       }
       const item = db
         .prepare(
-          "SELECT doc,version,title,html,prd,revision FROM shares WHERE token=?",
+          "SELECT doc,version,title,html,prd,revision FROM shares WHERE token=? AND NOT EXISTS (SELECT 1 FROM file_shares f WHERE f.doc=shares.doc AND f.version=shares.version AND f.enabled=0)",
         )
         .get(key);
       if (!item) fault("链接不存在", 404);
@@ -285,7 +285,7 @@ const server = http.createServer(async (req, res) => {
         throttle("comment:" + req.socket.remoteAddress, 35, 60000);
         const b = await body(req);
         if (
-          !db.prepare("SELECT 1 FROM shares WHERE token=? AND prd!=''").get(key)
+          !db.prepare("SELECT 1 FROM shares WHERE token=? AND prd!='' AND NOT EXISTS (SELECT 1 FROM file_shares f WHERE f.doc=shares.doc AND f.version=shares.version AND f.enabled=0)").get(key)
         )
           fault("链接不存在", 404);
         addComment(item.doc, item.version, b);
@@ -384,8 +384,15 @@ const server = http.createServer(async (req, res) => {
         };
         if (typeof ref.doc !== "string" || !Number.isSafeInteger(ref.version))
           fault("文件标识无效");
-        const key = createFileShare(filesOf(workspace()), ref);
-        return send(res, { url: origin + "/s/" + key, token: key });
+        if (b.enabled !== undefined && typeof b.enabled !== "boolean") fault("分享状态无效");
+        const state = fileShareState(filesOf(workspace()), ref, b.lookup ? undefined : (b.enabled ?? true));
+        if (!b.lookup && state.token) {
+          notify(state.token);
+          const pair = db.prepare("SELECT token FROM shares WHERE doc=? AND version=?").get(ref.doc, ref.version);
+          if (pair) notify(pair.token);
+        }
+        return send(res, { enabled: state.enabled, token: state.enabled ? state.token : null,
+          url: state.enabled ? origin + "/s/" + state.token : null });
       }
       const a = w && findOutput(JSON.parse(w.body).docs, b.doc, b.version);
       if (!a?.html || !a?.prd) fault("先生成并保存两份交付文件");
@@ -485,6 +492,7 @@ const server = http.createServer(async (req, res) => {
         const path = transcriptPath(target.id, session.id);
         if (p === "/api/agent/queue") {
           const { action, requestId, question, refs = [], modelId } = b;
+          if (!["list", "add", "prioritize"].includes(action)) fault("未知的队列操作");
           if (action !== "list" && !/^[0-9a-f-]{36}$/i.test(requestId || "")) fault("消息编号无效");
           if (action === "add" && (typeof question !== "string" || !question.trim() || !Array.isArray(refs))) fault("消息内容无效");
           const item = action === "add" ? { requestId, question, refs, ...(modelId && { modelId }), createdAt: Date.now() } : { requestId };
@@ -555,6 +563,7 @@ const server = http.createServer(async (req, res) => {
     if (live)
       return live.end("error", {
         error: e.status ? e.message : "服务执行失败，请检查服务状态后重试",
+        ...(e.selectionExpired && { selectionExpired: true }),
       });
     if (!res.headersSent)
       send(

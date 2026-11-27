@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineTool } from "@earendil-works/pi-durable";
 import { obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
+import { resolveFile } from "../../shared/assistant-context.mjs";
 import {
   describeCanvas,
   sceneVersion,
@@ -91,11 +92,18 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
   const read = defineTool({
     name: "read_file",
     description:
-      "按工作区文件 ID 或路径读取，默认当前文件。返回文档正文、HTML 源码、画布图元或文件夹清单。可用 offset、limit 按字符读取长内容。",
-    parameters: obj({ ...selector, offset: opt(int()), limit: opt(int()) }),
-    async execute({ id, path, offset = 0, limit = 16000 }) {
+      "只读在线工作区。按 ID 或文件树路径读取，默认当前文件。可用 offset、limit 按字符分页。读取历史交付引用时按其提供的 id、version 和 file 读取。",
+    parameters: obj({ ...selector, version: opt(int()), file: opt(oneOf(["prd", "html"])), offset: opt(int()), limit: opt(int()) }),
+    async execute({ id, path, version, file, offset = 0, limit = 16000 }) {
       try {
-        const n = target(id, path);
+        let n;
+        if (version !== undefined || file !== undefined) {
+          if (!id || path !== undefined || !Number.isSafeInteger(version) || !file)
+            throw Error("历史交付引用需要 id、version 和 file");
+          const revision = resolveFile(nodes, { id, version, file });
+          if (!revision) throw Error("找不到此版本的交付文件");
+          n = { ...revision, id, html: revision.content };
+        } else n = target(id, path);
         const children = effective()
           .filter((c) => c.parent === n.id)
           .map(({ id, type, title }) => ({ id, type, title }));
@@ -128,7 +136,7 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
   const edit = defineTool({
     name: "edit_file",
     description:
-      "按 ID 或路径重命名、移动任意文件。编辑文档或 HTML 的正文可传 content 完整替换，或传 old_text 和 content 精确替换。编辑画布图元使用 draw_canvas。",
+      "修改在线工作区文件，默认当前文件。用 ID 或文件树路径指定其他目标。可重命名、移动、用 content 替换正文或配合 old_text 精确替换。编辑画布图元使用 draw_canvas。",
     parameters: obj({
       ...selector,
       title: opt(str()),
@@ -137,7 +145,7 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
       source: opt(
         str({
           description:
-            "从本轮 Bash 工作目录读取 UTF-8 文件，用于包含内嵌图片或表格的正文，与 content 二选一。",
+            "从本轮 任务工作目录读取 UTF-8 文件，用于包含内嵌图片或表格的正文，与 content 二选一。",
         }),
       ),
       append: opt(bool({ description: "向文档末尾追加，保留已有正文。" })),
@@ -258,7 +266,7 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
       source: opt(
         str({
           description:
-            "从本次 Bash 工作目录读取一个 UTF-8 文件，传文件名，与 content 二选一。",
+            "从本次 任务工作目录读取一个 UTF-8 文件，传文件名，与 content 二选一。",
         }),
       ),
     }),

@@ -126,21 +126,6 @@ export function skillRuntime(catalog, prior = []) {
       "\n</skill>"
     );
   }
-  function resource(name) {
-    const [base, slug, ...parts] = name.split("/");
-    const skill = catalog.skills.get(slug);
-    if (
-      base !== "skills" ||
-      !skill ||
-      !parts.length ||
-      parts.some((p) => !p || p === ".." || p === ".")
-    )
-      return;
-    const rel = parts.join("/");
-    if (rel === "SKILL.md" || (!active.has(slug) && !previous.has(slug)))
-      return;
-    return contents(skill, rel);
-  }
   function mountForShell(files, mounted) {
     for (const slug of new Set([...previous, ...active])) {
       if (mounted.has(slug)) continue;
@@ -163,7 +148,7 @@ export function skillRuntime(catalog, prior = []) {
   }
   const advertised = [...catalog.skills.values()].filter((s) => !s.manual);
   const instructions =
-    "以下目录只列技能元数据。任务匹配某项描述时，调用 skill_load({name}) 获取并遵循技能正文。对已加载技能，用 read_resource 按返回的技能目录路径读取其引用资料。显式 /skill:name 指定的技能会随任务展开。\n<available_skills>\n" +
+    "以下目录只列技能元数据。任务匹配某项描述时，调用 skill_load({name}) 获取并遵循技能正文。读完 SKILL.md 后，按其中的相对路径用 read 读取已加载包的参考文件或脚本，用 bash 执行脚本和处理 Excel 等二进制资源。显式 /skill:name 指定的技能会随任务展开。\n<available_skills>\n" +
     advertised
       .map(
         (s) =>
@@ -177,7 +162,7 @@ export function skillRuntime(catalog, prior = []) {
       )
       .join("\n") +
     "\n</available_skills>";
-  return { load, resource, mountForShell, instructions, active };
+  return { load, mountForShell, instructions, active };
 }
 
 export function installSkill({ name, files }) {

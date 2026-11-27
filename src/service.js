@@ -66,7 +66,9 @@ export async function streamChat(body, controller, onProgress) {
         if (!line) continue;
         const packet = JSON.parse(line);
         if (packet.type === "result") return packet.data;
-        if (packet.type === "error") throw Error(packet.data.error);
+        if (packet.type === "error") throw Object.assign(Error(packet.data.error), {
+          selectionExpired: !!packet.data.selectionExpired,
+        });
         if (packet.type === "progress") onProgress(packet.data);
       }
     }

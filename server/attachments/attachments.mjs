@@ -8,6 +8,12 @@ db.exec(
 db.exec(
   "CREATE TABLE IF NOT EXISTS chat_images(id TEXT PRIMARY KEY, title TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL)",
 );
+if (!db.prepare("PRAGMA table_info(chat_attachments)").all().some(col => col.name === "bytes"))
+  db.exec("ALTER TABLE chat_attachments ADD COLUMN bytes BLOB");
+
+export function attachmentBytes(id) {
+  return db.prepare("SELECT bytes FROM chat_attachments WHERE id=?").get(id)?.bytes;
+}
 export function imageAttachment(id, metadataOnly = false) {
   if (typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id))
     fault("图片引用无效");
@@ -37,7 +43,7 @@ function imageMime(bytes) {
 export function attachment(id) {
   if (typeof id !== "string") fault("附件引用无效");
   const item = db
-    .prepare("SELECT title,content FROM chat_attachments WHERE id=?")
+    .prepare("SELECT title,content,bytes IS NOT NULL AS hasOriginal FROM chat_attachments WHERE id=?")
     .get(id);
   if (!item) fault("找不到此附件，请重新上传", 404);
   return item;
@@ -104,11 +110,9 @@ export async function uploadAttachment(req, title) {
   }
   if (!db.prepare("SELECT 1 FROM chat_attachments WHERE id=?").get(id)) {
     const text = await extract(title.split(".").at(-1).toLowerCase(), bytes);
-    db.prepare("INSERT OR IGNORE INTO chat_attachments VALUES(?,?,?)").run(
-      id,
-      title,
-      text,
-    );
+    db.prepare("INSERT OR IGNORE INTO chat_attachments(id,title,content,bytes) VALUES(?,?,?,?)").run(id, title, text, bytes);
+  } else {
+    db.prepare("UPDATE chat_attachments SET bytes=? WHERE id=? AND bytes IS NULL").run(bytes, id);
   }
   return { kind: "upload", id, title };
 }

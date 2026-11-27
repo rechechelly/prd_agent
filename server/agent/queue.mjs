@@ -47,6 +47,8 @@ export async function messageQueue(path, action = "list", input = {}) {
         const index = queue.items.findIndex(item => item.requestId === input.requestId);
         if (action === "add") {
           if (index < 0) queue.items.push(input);
+        } else if (action === "rejectSelection") {
+          if (index >= 0) queue.items.splice(index, 1);
         } else if (action === "prioritize") {
           if (index < 0) fault("这条消息已离开队列", 409);
           if (index > 0) {

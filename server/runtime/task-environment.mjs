@@ -55,7 +55,7 @@ export async function taskEnvironment(stage, files, skills, resumed = false) {
   await fs.mkdir(work, { recursive: resumed });
   await fs.mkdir(path.join(inputs, "skills"), { recursive: true });
   for (const [name, data] of Object.entries(files)) {
-    await fs.writeFile(path.join(inputs, name), data);
+    await fs.writeFile(path.join(inputs, name), typeof data === "function" ? data() : data);
     try {
       await fs.copyFile(
         path.join(inputs, name),
@@ -104,7 +104,7 @@ export async function readScratchFile(env, source) {
     source === ".." ||
     path.basename(source) !== source
   )
-    throw Error("source 需为 Bash 工作目录下的文件名");
+    throw Error("source 需为 任务工作目录下的文件名");
   const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
   const file = await fs.open(
     path.join(env.cwd, source),
