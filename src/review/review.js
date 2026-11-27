@@ -18,16 +18,16 @@ export function openDiscussion(doc, root, viewOriginal) {
   if (online) {
     const route =
       "prd-comments?doc=" +
-      encodeURIComponent(doc.origin?.doc ?? doc.id) +
+      encodeURIComponent(doc.origin?.file === "prd" ? doc.origin.doc : doc.id) +
       "&version=" +
-      (doc.origin?.version ?? 0);
+      (doc.origin?.file === "prd" ? doc.origin.version : 0);
     const toggle = $("commentsToggle");
     toggle.hidden = false;
     toggle.textContent = "评论";
     toggle.setAttribute("aria-expanded", "false");
     toggle.onclick = () => {
       if (panel.hidden && $("work").classList.contains("reviewing-inline"))
-        viewOriginal();
+        viewOriginal?.();
       panel.hidden = !panel.hidden;
       toggle.setAttribute("aria-expanded", String(!panel.hidden));
       discussion.setExpanded(!panel.hidden);
@@ -57,6 +57,6 @@ export function openDiscussion(doc, root, viewOriginal) {
     events = new EventSource("./api/" + route.replace("?", "/events?"));
     events.onopen = events.onmessage = refresh;
     refresh();
-    discussion.bind(document, null, null, root);
+    if (root) discussion.bind(document, null, null, root);
   }
 }

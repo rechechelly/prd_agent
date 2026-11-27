@@ -109,7 +109,11 @@ export function lookupShare(key, docs) {
     const ref = canonicalRef(docs, row);
     if (rowsFor(docs, ref).some(r => !r.enabled)) return;
     const data = content(docs, ref);
-    if (data) return { ref, data: { ...data, revision: row.revision }, canComment: ref.file === "prd" || data.kind === "document" };
+    if (data) {
+      const part = ref.file === "html" && docs.find(f => f.origin?.doc === ref.doc && f.origin.version === ref.version && f.origin.file === "html");
+      const commentRef = part ? { doc: part.id, version: 0 } : ref;
+      return { ref: commentRef, data: { ...data, revision: row.revision }, canComment: true };
+    }
   } else {
     const pair = db.prepare("SELECT * FROM shares WHERE token=?").get(key);
     if (!legacyEnabled(docs, pair)) return;

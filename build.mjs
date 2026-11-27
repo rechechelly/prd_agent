@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -81,3 +83,24 @@ const html = fs
       "</script></body></html>",
   );
 fs.writeFileSync("叙页产品需求工作台.html", html);
+
+// Keep the downloadable single file, but let online navigation reuse compressed assets.
+const out = ".web";
+fs.mkdirSync(out, { recursive: true });
+function asset(ext, value) {
+  const hash = createHash("sha256").update(value).digest("hex").slice(0, 16);
+  const name = hash + "." + ext;
+  fs.writeFileSync(path.join(out, name), value);
+  fs.writeFileSync(path.join(out, name + ".gz"), gzipSync(value));
+  return "assets/" + name;
+}
+const onlineShell = fs.readFileSync("src/shell.html", "utf8")
+  .replace(/<style>\s*\/\* APP_CSS \*\/\s*<\/style>/, '<link rel="stylesheet" href="' + asset("css", css) + '">')
+  .replace(/<script>\s*\/\* APP_JS \*\/\s*<\/script>/, '<script src="' + asset("js", js + "\n/*\n" + notices.replaceAll("*/", "* /") + "\n*/") + '"></script>');
+fs.writeFileSync(path.join(out, "index.html"), onlineShell);
+
+// This directory contains only versioned web build artifacts.
+for (const name of fs.readdirSync(out)) {
+  if (/^[a-f0-9]{16}\.(js|css)(\.gz)?$/.test(name) && !onlineShell.includes(name.replace(/\.gz$/, "")))
+    fs.unlinkSync(path.join(out, name));
+}

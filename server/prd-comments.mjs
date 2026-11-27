@@ -88,7 +88,7 @@ export function pruneComments(findArtifact) {
   for (const { doc, version } of db
     .prepare("SELECT DISTINCT doc,version FROM prd_comments")
     .all())
-    if (!findArtifact(doc, version)?.prd)
+    if (!findArtifact(doc, version))
       db.prepare("DELETE FROM prd_comments WHERE doc=? AND version=?").run(
         doc,
         version,

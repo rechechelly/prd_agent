@@ -1,44 +1,30 @@
-// A legacy document's single conversation keeps its original Pi SQLite identity.
+import { relatedFiles, sessionName } from "../../shared/chat-sessions.mjs";
+import { changed } from "../service";
+export { sessionName };
+export const chats = [];
+const selected = new WeakMap();
+export function newSession(file) {
+  const session = { id: crypto.randomUUID(), sourceId: file.id, messages: [], updatedAt: 0 };
+  chats.push(session);
+  changed();
+  chooseSession(file, session);
+  return session;
+}
 export function sessions(file) {
-  if (!file) return [];
-  if (!file.chatSessions) {
-    const messages = file.messages || [];
-    file.chatSessions = [
-      { id: "legacy", messages, updatedAt: messages.at(-1)?.createdAt || 0 },
-    ];
-    delete file.messages;
-  }
-  return file.chatSessions;
+  return file ? chats.filter(s => relatedFiles(s).includes(file.id)).sort((a,b) => (b.lastAskedAt ?? b.updatedAt) - (a.lastAskedAt ?? a.updatedAt)) : [];
+}
+export function chooseSession(file, session) {
+  selected.set(file, session);
+  session.closed = false;
+}
+export function latestSession(file) {
+  const latest = sessions(file)[0] || newSession(file);
+  chooseSession(file, latest);
 }
 export function selectedSession(file) {
-  const list = sessions(file);
-  return list.find((s) => s.id === file?.selectedChat) || list[0];
-}
-export function sessionName(s) {
-  return (
-    s.messages[0]?.q || s.pausedQuestion || s.failedAttempts?.[0]?.q || "新会话"
-  );
-}
-
-// Earlier cross-file deliveries inserted a synthetic first turn to host a review.
-export function migrateExternalReviews(file) {
-  if (!file.workspaceChangeRun || !file.chatSessions) return false;
-  let changed = false;
-  for (const session of [...file.chatSessions]) {
-    const first = session.messages?.[0];
-    if (first?.answer !== "文件修改已准备好，请预览并采用。" || first.requestId ||
-        !(first.resolved || typeof first.proposed === "string" || first.canvasPatch)) continue;
-    session.messages.shift();
-    if (!first.resolved) {
-      const { q, answer, ...review } = first;
-      (file.externalReviews ||= []).push(review);
-    }
-    if (!session.messages.length && !session.failedAttempts?.length && !session.pausedQuestion && !session.conversationId) {
-      file.chatSessions = file.chatSessions.filter(s => s !== session);
-      if (file.selectedChat === session.id) delete file.selectedChat;
-    }
-    changed = true;
-  }
-  if (!file.chatSessions.length) delete file.chatSessions;
-  return changed;
+  if (!file) return;
+  const current = selected.get(file);
+  if (current && chats.includes(current) && relatedFiles(current).includes(file.id)) return current;
+  latestSession(file);
+  return selected.get(file);
 }

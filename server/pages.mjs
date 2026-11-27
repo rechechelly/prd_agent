@@ -39,7 +39,7 @@ form.onsubmit = async (event) => {
       })
     });
     if (!response.ok) throw Error((await response.json()).error);
-    location.replace('./');
+    location.reload();
   } catch (error) {
     loginStatus.textContent = error.message;
     button.disabled = false;
@@ -50,7 +50,7 @@ export const sharePage = page(
   "需求评审",
   '<header><h1 id="title">需求评审</h1><div><button id="prd" class="active">图文 PRD</button> <button id="html">交互原型</button></div></header><main class="review"><iframe id="view" title="公开交付物" sandbox="allow-scripts"></iframe><aside class="prd-discussion" id="publicDiscussion"></aside></main><p id="err" role="status"></p>',
   `const createDiscussion = (${createPrdDiscussion.toString()});
-const endpoint='../api/public/'+location.pathname.split('/').pop();
+const endpoint='./api/public/'+document.querySelector('meta[name=public-token]').content;
 const $=key=>document.getElementById(key);
 const view=$('view');
 let item, which='prd', request=0;
@@ -66,8 +66,8 @@ function show(){
  const single=Boolean(item.kind);
  if(single)which=item.kind;
  $('prd').parentElement.hidden=single;
- const next=which; $('publicDiscussion').hidden=which!=='prd' && which!=='document';
- document.querySelector('.review').classList.toggle('singleFile',which!=='prd' && which!=='document');
+ const next=which; $('publicDiscussion').hidden=!single && which!=='prd';
+ document.querySelector('.review').classList.toggle('singleFile',$('publicDiscussion').hidden);
  discussion.unbind();
  view.onload=null;
  if(which==='prd' || which==='document'){

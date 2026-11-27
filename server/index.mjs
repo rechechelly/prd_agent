@@ -1,5 +1,8 @@
 import { modelRoute } from "./models/routes.mjs";
 import { profiles } from "./models/providers.mjs";
+import { isSessionRunning } from "./agent/run.mjs";
+import { removeTranscript } from "./agent/queue.mjs";
+import { sessionStore } from "./agent/history.mjs";
 import { agentRoute } from "./agent/routes.mjs";
 import {
   installSkill,
@@ -17,19 +20,19 @@ import {
 } from "./sharing/files.mjs";
 import { imageAttachment, uploadAttachment } from "./attachments/attachments.mjs";
 import http from "node:http";
-import fs from "node:fs/promises";
-import { db, session, login, fault, transaction } from "./storage.mjs";
+import { workspaceRow, filesOf, replaceWorkspace, migrateWorkspace, invalidateWorkspace, workspaceIndex, fileDetail, expandWorkspace, branchWorkspace } from "./workspace/state.mjs";
+import { filePage, serveAsset } from "./workspace/web.mjs";
+import { db, session, login, fault, transaction, setting } from "./storage.mjs";
 import {
   generationRuns,
   pendingDelivery,
   acknowledgeDeliveries,
 } from "./workspace/generation-log.mjs";
 import { agentCatalog } from "./agent/tools.mjs";
-import { sharePage, loginPage } from "./pages.mjs";
+
 import { listComments, addComment, pruneComments } from "./prd-comments.mjs";
 import { serveStaticDelivery } from "./static-delivery.mjs";
-const homepage = new URL("../叙页产品需求工作台.html", import.meta.url),
-  clients = new Map(),
+const clients = new Map(),
   limits = new Map();
 const port = Number(process.env.PORT || 4317),
   host = process.env.HOST || "127.0.0.1";
@@ -94,27 +97,27 @@ function stream(req, res, key) {
     if (!clients.get(key)?.size) clients.delete(key);
   });
 }
-const row = () => db.prepare("SELECT * FROM state WHERE id=1").get();
-const filesOf = (w) => [
-  ...(w?.docs || []),
-  ...(w?.folders || []).map((f) => ({ ...f, type: "文件夹" })),
-];
-const workspace = () => JSON.parse(row()?.body || "{}");
+const workspace = () => workspaceRow().data || {};
+function commentTarget(data, id, version) {
+  return version === 0 ? filesOf(data).some(f => f.id === id) : !!findOutput(data.docs, id, version)?.prd;
+}
 const commentsKey = (doc, version) => "comments:" + doc + ":" + version;
 function notifyComments(doc, version) {
   notify(commentsKey(doc, version));
   for (const key of shareTokens(filesOf(workspace()), { doc, version, file: "prd" })) notify(key);
 }
-function saveWorkspace(input) {
-  const w = input.data;
+async function saveWorkspace(input) {
+  const state = workspaceRow();
+  if (input.revision !== state.revision) fault("工作区已更新，请刷新", 409);
+  const w = expandWorkspace(input.data, state.data);
   if (!Array.isArray(w?.docs) || !Array.isArray(w.folders))
     fault("工作区数据不完整");
+  const kept = new Set(w.chats.map(s => s.id));
+  const removed = state.data?.chats.filter(s => !kept.has(s.id)) || [];
+  if (removed.some(isSessionRunning)) fault("请先暂停正在运行的会话再删除", 409);
   const changed = [];
   const revision = transaction(() => {
-    const current = row();
-    const previous = current?.revision || 0;
-    if (input.revision !== previous)
-      fault("其他窗口已保存新版，请先保留本窗口修改，再刷新载入最新版本", 409);
+    const previous = state.revision;
     for (const file of w.docs) {
       const type = file && typeof file === "object" && !Array.isArray(file) && storedDocumentType(file.type);
       if (!type) fault("在线文件类型仅支持文档、原型画布和 HTML，文件夹请保存到文件夹列表");
@@ -125,13 +128,10 @@ function saveWorkspace(input) {
           (folder.type != null && folder.type !== "文件夹")) fault("文件夹类型无效");
       folder.type = "文件夹";
     }
-    db.prepare("INSERT OR REPLACE INTO state VALUES(1,?,?)").run(
-      previous + 1,
-      JSON.stringify(w),
-    );
-    const find = (id, version) => findOutput(w.docs, id, version);
+    replaceWorkspace(previous + 1, w);
+    const find = (id, version) => commentTarget(w, id, version);
     updateFileShares(
-      current ? filesOf(JSON.parse(current.body)) : [],
+      filesOf(state.data),
       filesOf(w),
       changed,
     );
@@ -139,9 +139,12 @@ function saveWorkspace(input) {
     pruneComments(find);
     return previous + 1;
   });
+  invalidateWorkspace();
   const docs = filesOf(w);
   changed.forEach(key => notifyShare(key, docs));
-  return { revision };
+  const stores = new Set(w.chats.map(sessionStore));
+  await Promise.all(removed.map(sessionStore).filter(path => !stores.has(path)).map(removeTranscript));
+  return { revision, keys: Object.fromEntries(docs.filter(f => f.key !== f.id).map(f => [f.id, f.key])) };
 }
 const server = http.createServer(async (req, res) => {
   try {
@@ -164,13 +167,33 @@ const server = http.createServer(async (req, res) => {
       fault("交付文件不存在", 404);
     }
     const auth = session(req.headers.cookie);
-    if (p === "/" && method === "GET")
-      return send(
-        res,
-        auth ? await fs.readFile(homepage) : loginPage,
-        200,
-        "text/html",
-      );
+    if (method === "GET" && serveAsset(p, req, res)) return;
+    const owner = setting("username");
+    const ownerPath = "/" + encodeURIComponent(owner);
+    const renderPage = (kind, key) => send(res, filePage(cookiePath, kind, key), 200, "text/html");
+    if (p === "/" && method === "GET") {
+      if (!auth) return renderPage("login");
+      res.writeHead(302, { Location: cookiePath + ownerPath.slice(1) });
+      return res.end();
+    }
+    if (method === "GET" && (p === ownerPath || p === ownerPath + "/" || p.startsWith(ownerPath + "/") && /^[-a-f0-9]{36}$/.test(p.slice(ownerPath.length + 1)))) {
+      const key = p.slice(ownerPath.length + 1);
+      if (!key) return renderPage(auth ? "edit" : "login");
+      const docs = filesOf(workspace()), file = docs.find(f => f.key === key);
+      if (auth) {
+        if (!file) fault("文件不存在", 404);
+        return renderPage("edit");
+      }
+      if (file) {
+        const ref = file.origin || { doc: file.id, version: 0, file: "document" };
+        const shared = fileShareState(docs, ref);
+        if (shared) {
+          const token = fileShareState(docs, ref, true);
+          return renderPage(lookupShare(token, docs)?.data.kind === "board" ? "board" : "review", token);
+        }
+      }
+      return renderPage("login");
+    }
     if (p === "/api/login" && method === "POST") {
       throttle("login:" + req.socket.remoteAddress, 18, 5 * 60000);
       const b = await body(req);
@@ -196,7 +219,7 @@ const server = http.createServer(async (req, res) => {
       if (!shared) fault("链接不存在", 404);
       const { ref, data, canComment } = shared;
       if (kind === "s" && method === "GET" && !action)
-        return send(res, data.kind === "board" ? await fs.readFile(homepage) : sharePage, 200, "text/html");
+        return renderPage(data.kind === "board" ? "board" : "review", key);
       if (kind !== "api/public") fault("无此页面", 404);
       if (method === "GET" && action === "events") return stream(req, res, key);
       if (method === "GET" && !action)
@@ -236,20 +259,22 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/workspace") {
       if (method === "GET") {
-        const w = row();
+        const w = workspaceRow();
         return send(res, {
-          revision: w?.revision || 0,
-          data: w ? JSON.parse(w.body) : null,
+          revision: w.revision, owner,
+          data: workspaceIndex(w.data),
           ...profiles(),
         });
       }
-      return send(res, saveWorkspace(await body(req)));
+      return send(res, await saveWorkspace(await body(req)));
     }
+    if (p === "/api/workspace/file" && method === "GET")
+      return send(res, { ...fileDetail(workspace(), url.searchParams.get("id")), revision: workspaceRow().revision });
     if (p === "/api/prd-comments" || p === "/api/prd-comments/events") {
       const id = url.searchParams.get("doc"),
         version = Number(url.searchParams.get("version"));
       const input = method === "POST" ? await body(req) : null;
-      if (!findOutput(workspace().docs, id, version)?.prd)
+      if (!commentTarget(workspace(), id, version))
         fault("PRD 不存在", 404);
       if (p.endsWith("/events") && method === "GET")
         return stream(req, res, commentsKey(id, version));
@@ -305,7 +330,8 @@ const server = http.createServer(async (req, res) => {
         key = fileShareState(docs, ref, b.lookup ? undefined : (b.enabled ?? true));
         if (!b.lookup) for (const link of shareTokens(docs, ref)) notifyShare(link, docs);
       }
-      return send(res, { enabled: !!key, token: key, url: key ? origin + "/s/" + key : null,
+      const node = docs.find(f => f.id === ref.doc && !ref.version || f.origin?.doc === ref.doc && f.origin.version === ref.version && f.origin.file === ref.file);
+      return send(res, { enabled: !!key, token: key, url: key ? (node && !legacy ? origin + ownerPath + "/" + node.key : origin + "/s/" + key) : null,
         ...(legacy && key && { comments: listComments(ref.doc, ref.version) }) });
     }
     if (p === "/api/pending-delivery" && method === "GET") {
@@ -322,9 +348,10 @@ const server = http.createServer(async (req, res) => {
         fault("文档不存在", 404);
       return send(res, { runs: generationRuns(id) });
     }
+    if (p === "/api/agent/fork" && method === "POST") return send(res, await branchWorkspace(await body(req)));
     if (p === "/api/agent" || p.startsWith("/api/agent/")) {
       const input = method === "POST" ? await body(req) : undefined;
-      const result = await agentRoute(url, req, res, filesOf(workspace()), input);
+      const result = await agentRoute(url, req, res, filesOf(workspace()), workspace().chats || [], input);
       if (!res.writableEnded && !res.destroyed) send(res, result);
       return;
     }
@@ -339,5 +366,6 @@ const server = http.createServer(async (req, res) => {
     else res.end();
   }
 });
+migrateWorkspace();
 migrateWritingRule();
 server.listen(port, host, () => console.log("叙页工作台 " + origin));

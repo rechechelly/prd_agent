@@ -21,7 +21,7 @@ npm start
 
 浏览器打开 [本地工作台](http://127.0.0.1:4317/)。首次启动账号为 `admin`，随机密码在 `.private/首次登录密码.txt`。首次启动前可设置 `XUYE_USERNAME` 和 `XUYE_PASSWORD`。已有账号继续使用数据库中的凭据。
 
-前端构建产物为根目录的 `叙页产品需求工作台.html`。每次修改前端后重新运行 `npm run build`，修改服务端后重启 Node。完整的模型、存储与分享能力通过登录版使用。Linux 的 Bash 和原型截图分别需要 bubblewrap 和 Chromium，安装与托管方式见[部署说明](部署说明.md)。
+`npm run build` 生成离线单文件 `叙页产品需求工作台.html` 和在线资源目录 `.web/`。在线页面按内容哈希缓存脚本和样式，支持 gzip。每次修改前端后重新运行 `npm run build`，修改服务端后重启 Node。完整的模型、存储与分享能力通过登录版使用。Linux 的 Bash 和原型截图分别需要 bubblewrap 和 Chromium，安装与托管方式见[部署说明](部署说明.md)。
 
 ## 连接模型
 
@@ -43,13 +43,14 @@ npm start
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
 - **Agent 对话**默认携带当前文件上下文。“给这个页面加字段”“继续写这一节”等请求优先在当前文件上提出修改。需要独立交付时，可以明确要求创建新的 PRD、HTML 或画布。对话可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
 - **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击「问 Agent」，或将选区拖入助手，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
-- **会话**归属于发起对话的文件。同一文件可以开多个会话。从 A 修改 B 时，在 B 中审阅修改，执行记录留在 A。输入或粘贴 Markdown 后，标题、列表和代码块直接在输入框中排版，可以继续编辑。按 Shift+Enter 换行，按 Enter 发送。拖动输入框上边缘可调整高度。
-- **分享**通过「分享」中的开关控制。关闭立即撤销链接访问，重新开启可继续使用原链接。
+- **会话**关联发起文件和每轮新建、编辑的文件。从产物打开助手会看到最近使用的关联会话。双击标签可重命名。在历史按钮下方可以选择会话或从所有关联文件中删除它。点击提问或回复旁的分支按钮，可继承截至该条消息的上下文和文件关联。每个分支拥有独立队列和后续执行记录。输入或粘贴 Markdown 后，标题、列表和代码块直接在输入框中排版，可以继续编辑。按 Shift+Enter 换行，按 Enter 发送。拖动输入框上边缘可调整高度。
+- **文件地址**采用 `/{账号}/{文件 UUID}`。账号首页默认打开目录中的首份文档，目录切换、刷新、前进和后退都使用文件地址。启动时仅传目录与会话索引，正文、画布和对应会话在打开文件时读取。
+- **分享**使用相同的文件地址。所有者登录后编辑，访客在开启分享时可查看内容并评论。私有文件引导访客登录。旧版已发出的分享链接继续使用原来的开关。分享通过「分享」中的开关控制。关闭立即撤销链接访问，重新开启可继续使用原链接。
 - **技能**在「工作区设置 → Agent 工具与技能」管理。仓库附带可替换的 `prd-writing` 技能，指导 Agent 交付可交互 HTML 和图文 PRD。用户可导入其他技能包。
 
 ## 代码结构和二次开发
 
-前端从 `src/main.js` 启动。文档编辑与补全在 `src/editor/`，对话在 `src/chat/`，文件目录、画布和供应商界面在 `src/workspace/`，分享评审在 `src/review/`。工作区示例、旧数据迁移、交付文件归档分别放在 `src/workspace/example.js`、`migration.js` 和 `deliveries.js`。前后端共用的范围编辑、文件类型、引用和画布模型在 `shared/`。
+前端从 `src/main.js` 启动。文档编辑与补全在 `src/editor/`，对话在 `src/chat/`，文件目录、画布和供应商界面在 `src/workspace/`，分享评审在 `src/review/`。工作区示例、旧数据迁移、交付文件归档分别放在 `src/workspace/example.js`、`shared/migrate-directory.mjs` 和 `deliveries.js`。前后端共用的范围编辑、文件类型、引用和画布模型在 `shared/`。
 
 服务端从 `server/index.mjs` 启动。Agent 循环、队列和历史在 `server/agent/`，分享与撤销在 `server/sharing/`，模型请求在 `server/models/`，文件生成和修改在 `server/workspace/`，附件解析在 `server/attachments/`，任务环境和网络代理在 `server/runtime/`。
 
@@ -99,7 +100,7 @@ npm start
 
 ### Pi Durable 如何管理会话
 
-工作台为每个文件会话分配独立的 SQLite 存储。消息通过 `Conversation.submit` 提交，服务等待 `Submission.wait` 返回结果。工具的输入和返回值来自已提交的 Pi 记录，界面的实时执行提示订阅 Pi 的 `ToolTask` 钩子。工作台另外负责把用户点击 Keep 的修改应用到相应在线文件。暂停使用 `Conversation.abort`，继续使用 `type: "continue"`。
+工作台为每个会话分配独立的 Pi SQLite 存储。同一会话在不同文件中使用同一份执行记录。分支通过 Pi 的祖先可见条目查询读取选定节点及以前的记录，在独立会话库中提交这段记录，并映射上下文压缩边界。消息通过 `Conversation.submit` 提交，服务等待 `Submission.wait` 返回结果。工具的输入和返回值来自已提交的 Pi 记录，界面的实时执行提示订阅 Pi 的 `ToolTask` 钩子。工作台另外负责把用户点击 Keep 的修改应用到相应在线文件。暂停使用 `Conversation.abort`，继续使用 `type: "continue"`。
 
 输入框上方可调整顺序的待发送消息保存在应用定义的 Pi 会话文档中。排队的消息正式提交时，出队和创建 submission 使用同一笔 Pi 事务。服务还用 Pi 事务把工具结果与相应的文件修改快照关联。若进程在工具完成后退出，重新连接原请求会取回已提交的修改与执行记录。交付归档使用单独的工作区事务，同一个已完成答复可以安全重取。
 
@@ -118,7 +119,9 @@ npm start
 | 方法与路径 | 输入与返回 |
 | --- | --- |
 | POST `api/login`、`api/logout` | 登录字段为 `username`、`password`、可选 `remember` |
-| GET / POST `api/workspace` | 获取工作区与版本，保存时发送 `{revision,data}`。其他窗口已更新时返回 409 |
+| GET / POST `api/workspace` | 获取目录索引与版本，保存时发送 `{revision,data}`。其他窗口已更新时返回 409 |
+| GET `api/workspace/file?id=…` | 获取单个文件和它关联的会话。目录摘要不会覆盖未加载文件的正文 |
+| POST `api/agent/fork` | 提交 `{revision,doc,chatId,index,role}`，role 取 user 或 assistant。返回独立分支及新版号 |
 | GET `api/models` | 返回 `providers` 和 `selections.agent/completion`；兼容字段 `profiles/active` 仍可读取 |
 | POST `api/providers/save` | `{id?,name,base,apiKey?,models:[模型名]}`。返回更新后的目录和 `savedProviderId` |
 | POST `api/providers/discover`、`api/providers/test` | `{id?,base,apiKey?}`，测试另传 `model`。分别返回模型名称列表或连通结果 |
@@ -132,4 +135,4 @@ npm start
 
 ## 版本与许可证
 
-开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v2.0.1`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。
+开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v2.0.2`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。

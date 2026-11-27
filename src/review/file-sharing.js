@@ -1,5 +1,6 @@
 import { $, dialog, toast } from "../shared";
 import { api, flush, online } from "../service";
+import { createPrdDiscussion } from "./prd-discussion.mjs";
 import { mountBoard, unmountBoard } from "../workspace/board";
 
 export async function shareFile(doc) {
@@ -43,12 +44,21 @@ export async function shareFile(doc) {
 }
 
 export async function publicBoard() {
-  const endpoint = "../api/public/" + location.pathname.split("/").pop();
+  const endpoint = "./api/public/" + document.querySelector("meta[name=public-token]").content;
   const title = document.createElement("h1"),
     mount = document.createElement("div");
   mount.style.cssText = "height:calc(100dvh - 50px);width:100%";
   title.style.cssText = "font-size:18px;padding:10px 20px;margin:0";
-  document.body.replaceChildren(title, mount);
+  const layout = document.createElement("main"), panel = document.createElement("aside");
+  layout.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) min(30%,300px)";
+  panel.className = "prd-discussion";
+  layout.append(mount, panel);
+  document.body.replaceChildren(title, layout);
+  const discussion = createPrdDiscussion(panel, { guest: true, async post(comment) {
+    const response = await fetch(endpoint + "/comments", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(comment) });
+    if (!response.ok) throw Error((await response.json()).error);
+    await refresh();
+  } });
   let revision,
     seq = 0;
   const stream = new EventSource(endpoint + "/events");
@@ -61,12 +71,15 @@ export async function publicBoard() {
         if (response.status === 404) {
           stream.close();
           unmountBoard();
+          discussion.disable(); panel.hidden = true;
           title.textContent = document.title = "分享链接不可用";
         }
         return;
       }
       const file = await response.json();
-      if (id !== seq || revision === file.revision) return;
+      if (id !== seq) return;
+      discussion.draw(file.comments || []);
+      if (revision === file.revision) return;
       revision = file.revision;
       title.textContent = document.title = file.title;
       mountBoard(file, mount, null, file.scene);

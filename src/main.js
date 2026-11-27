@@ -1,4 +1,4 @@
-import { migrateDirectory } from "./workspace/migration";
+import { migrateDirectory } from "../shared/migrate-directory.mjs";
 import { applyDelivery } from "./workspace/deliveries";
 import { shareFile, publicBoard } from "./review/file-sharing";
 import { initModels, setModels, selectedModel } from "./workspace/providers";
@@ -9,7 +9,10 @@ import { boardType, onlineFileTypes } from "../shared/workspace-files.mjs";
 import { emptyHtml, sourceEdits, installHtmlSource } from "./workspace/html-source";
 import { createDocumentEditor } from "./editor/document-editor";
 import { sceneVersion } from "../shared/canvas-model.mjs";
-import { sessions, selectedSession, sessionName } from "./chat/chat-sessions";
+import { targetsFile } from "../shared/chat-sessions.mjs";
+import { editableTab, historyPopover } from "./chat/session-controls";
+import { configureNavigation, addressKey, visitFile, loadFile } from "./workspace/navigation";
+import { chats, sessions, newSession, latestSession, chooseSession, selectedSession, sessionName } from "./chat/chat-sessions";
 import { installComposer } from "./chat/composer";
 import { renderChatMarkdown } from "./chat/markdown";
 import { installReferenceInput } from "./chat/reference-input";
@@ -40,6 +43,7 @@ import {
   boot,
   changed,
   flush,
+  forkChat,
   online,
   streamChat,
 } from "./service";
@@ -87,7 +91,7 @@ function switchComposer(target) {
   renderQuotes();
 }
 function snapshot() {
-  return { docs, folders, completionEnabled };
+  return { docs, folders, chats, completionEnabled };
 }
 async function quoteSelection(selection, rawSelection) {
   if (!online) return toast("请在登录版工作台使用划词提问");
@@ -229,7 +233,7 @@ function updateHtmlView(sourceDiff, renderSource = doc.html) {
 function reviewDraft(focusIndex) {
   const target = doc;
 
-  const pending = selectedSession(target)?.messages.findLast(m => typeof m.proposed === "string" && !m.resolved)
+  const pending = selectedSession(target)?.messages.findLast(m => targetsFile(m, selectedSession(target), target) && typeof m.proposed === "string" && !m.resolved)
     || target?.externalReviews?.find(m => typeof m.proposed === "string" && !m.resolved);
   const isHtml = page === "result" && target?.type === "交互 HTML";
   const preview = $(isHtml ? "htmlDiff" : "draftPreview");
@@ -495,6 +499,8 @@ function header() {
   completionButton.hidden = !isDoc;
   if (!completionButton.hidden && completionButton.parentNode !== mount)
     mount.insertBefore(completionButton, $("assistantToggle"));
+  const comments = $("commentsToggle");
+  if (doc && comments.parentNode !== mount) mount.insertBefore(comments, $("assistantToggle"));
   const share = $("share");
   share.hidden = !doc || (!isDoc && page !== "boardPage" && page !== "result");
   if (share.parentNode !== mount)
@@ -533,7 +539,7 @@ function show(p) {
 let mountedBoard, mountedPatch;
 function updateBoard() {
   const session = selectedSession(doc),
-    msg = session.messages.findLast((m) => m.canvasPatch && !m.resolved)
+    msg = session.messages.findLast((m) => targetsFile(m, session, doc) && m.canvasPatch && !m.resolved)
       || doc.externalReviews?.find(m => m.canvasPatch && !m.resolved);
   const bar = $("boardReview");
   const stale = msg && sceneVersion(doc.scene) !== msg.canvasBase;
@@ -581,7 +587,15 @@ function updateBoard() {
     bar.append(button);
   }
 }
-function openDoc(d) {
+let navigation = 0;
+async function openDoc(d, replace = false) {
+  const attempt = ++navigation;
+  if (d?.deferred) {
+    try { await loadFile(d); }
+    catch (e) { toast(e.message); return false; }
+    if (attempt !== navigation) return false;
+  }
+  visitFile(d, replace);
   if (!d) {
     doc = null;
     loadedDoc = null;
@@ -591,12 +605,14 @@ function openDoc(d) {
   const switching = loadedDoc !== d;
   if (switching) {
     previewOriginal = false;
+    latestSession(d);
   }
   loadedDoc = d;
   doc = d;
   reveal(d.parent);
   if (d.type === "交互 HTML" || folders.includes(d)) {
     show("result");
+    openDiscussion(d);
     $("resultName").textContent = d.title;
     $("resultFrame").hidden = folders.includes(d);
     $("folderItems").hidden = !folders.includes(d);
@@ -629,6 +645,7 @@ function openDoc(d) {
   }
   if (boardType(d.type)) {
     show("boardPage");
+    openDiscussion(d);
     $("boardTitle").textContent = d.title;
     chat();
     return;
@@ -732,8 +749,7 @@ function documentBody(html) {
   return wrapper.innerHTML;
 }
 function selectChat(file, session) {
-  file.selectedChat = session.id;
-  session.closed = false;
+  chooseSession(file, session);
   switchComposer(session);
   previewOriginal = false;
   changed();
@@ -753,7 +769,8 @@ function renderTabs(file, active) {
     button.setAttribute("aria-selected", String(session === active));
     button.textContent = sessionName(session);
     button.title = button.textContent;
-    button.onclick = () => selectChat(file, session);
+    button.onclick = () => { if (active !== session) selectChat(file, session); };
+    editableTab(button, session, name => { session.name = name; changed(); chat(); });
     tab.append(button);
     if (open.length > 1) {
       const close = document.createElement("button");
@@ -821,34 +838,34 @@ function mountQuestionEditor(box, session, message) {
 }
 function openChatHistory() {
   const file = doc;
-  const entries = sessions(file).map(session => ({ file, session }));
-  entries.sort((a, b) => b.session.updatedAt - a.session.updatedAt);
-  const list = $("historyList");
-  list.replaceChildren();
-  for (const { file, session } of entries) {
-    const button = document.createElement("button"),
-      title = document.createElement("b"),
-      meta = document.createElement("small");
-    title.textContent = sessionName(session);
-    meta.textContent = [
-      file.title,
-      session.updatedAt
-        ? new Date(session.updatedAt).toLocaleString("zh-CN")
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    button.append(title, meta);
-    button.onclick = () => {
-      $("historyDialog").close();
-      openDoc(file);
-      openAgent = true;
-      header();
-      selectChat(file, session);
-    };
-    list.append(button);
-  }
-  $("historyDialog").showModal();
+  historyPopover(sessions(file), s => selectChat(file, s), s => {
+    chats.splice(chats.indexOf(s), 1);
+    latestSession(file);
+    switchComposer(selectedSession(file));
+    changed();
+    chat();
+    flush().catch(e => toast(e.message));
+  }, s => sending.has(s));
+}
+async function branchAt(file, session, message, role) {
+  try {
+    const branch = await forkChat({ doc: file.id, chatId: session.id,
+      index: session.messages.indexOf(message), entry: message.userEntry || findTurn(transcripts.get(session)?.turns || [], message)?.entry, role }, s => chats.push(s));
+    const files = [...docs, ...folders];
+    const target = sessions(file).includes(branch) ? file :
+      files.find(f => f.id === (branch.messages.at(-1)?.fileId || branch.sourceId)) ||
+      files.find(f => sessions(f).includes(branch));
+    if (target) { await openDoc(target); selectChat(target, branch); }
+  } catch (e) { toast(e.message); }
+}
+function branchButton(file, session, message, role) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "forkMessage";
+  button.title = button.ariaLabel = role === "user" ? "从这条提问创建分支" : "从这条回复创建分支";
+  button.innerHTML = icon("branch");
+  button.onclick = () => branchAt(file, session, message, role);
+  return button;
 }
 function updateChatProgress(pending) {
   const panel = pending.panel;
@@ -933,7 +950,7 @@ function chat(focusIndex) {
   if (pending) messages.push(pending);
   if (online) {
     const state = queueState(session);
-    const blocked = hasProposal(file, session.messages);
+    const blocked = hasProposal(file, session);
     renderQueue(session, pending, blocked, item => prioritize(file, session, item));
     if (!state.initialized) {
       state.initialized = true;
@@ -989,7 +1006,8 @@ function chat(focusIndex) {
     renderChatMarkdown(editor, body, m.q || "");
     question.append(body);
     block.append(question);
-    if (!pending && !m.failure && !m.control) {
+    if (online && (session.messages.includes(m) || findTurn(turns, m)?.entry)) question.append(branchButton(file, session, m, "user"));
+    if (!pending && !m.failure && !m.control && !m.userOnly) {
       const edit = document.createElement("button");
       edit.className = "editQuestion";
       edit.type = "button";
@@ -1065,7 +1083,14 @@ function chat(focusIndex) {
           resume.type = "button";
           resume.className = "requestControl";
           resume.textContent = m.control === "ready" ? "取回结果" : "继续";
-          resume.onclick = () => ask(m.q, m.editIndex, m.refsUsed || [], m);
+          resume.onclick = async () => {
+            const target = directory().entries.get(m.fileId || session.sourceId)?.item;
+            if (!target) return toast("请求的原文件已删除");
+            await openDoc(target);
+            if (target !== doc) return;
+            selectChat(target, session);
+            ask(m.q, m.editIndex, m.refsUsed || [], m);
+          };
           question.append(resume);
         }
         area.append(block);
@@ -1084,6 +1109,7 @@ function chat(focusIndex) {
         area.append(block);
         continue;
       }
+      if (m.userOnly) { area.append(block); continue; }
       const reply = document.createElement("div");
       reply.className = "agentReply";
       renderChatMarkdown(editor, reply, m.answer || "");
@@ -1103,6 +1129,7 @@ function chat(focusIndex) {
         }
       };
       actions.append(copy);
+      if (online) actions.append(branchButton(file, session, m, "assistant"));
       if (m.createdAt) {
         const time = document.createElement("time");
         time.textContent = new Date(m.createdAt).toLocaleTimeString("zh-CN", {
@@ -1160,10 +1187,10 @@ function chat(focusIndex) {
   if (messages.length) area.scrollTop = area.scrollHeight;
 }
 function refreshChat(file, session) {
-  if (doc === file && selectedSession(file) === session) chat();
+  if (doc && selectedSession(doc) === session) chat();
 }
-function hasProposal(file, messages) {
-  return [...messages, ...(file.externalReviews || [])]
+function hasProposal(file, session, messages = session.messages) {
+  return [...messages.filter(m => (m.fileId || session?.sourceId) === file.id), ...(file.externalReviews || [])]
     .some(m => (typeof m.proposed === "string" || m.canvasPatch) && !m.resolved);
 }
 function interrupt(pending) {
@@ -1196,14 +1223,19 @@ function drainQueue(file, session) {
   const transcript = transcripts.get(session);
   if (!transcript?.loaded || transcript.turns.some(t => t.control === "ready")) return;
   if (sending.has(session) || state.loading || state.promoting || state.stopped ||
-      !state.items.length || hasProposal(file, session.messages) || (!docs.includes(file) && !folders.includes(file))) return;
+      !state.items.length || (!docs.includes(file) && !folders.includes(file))) return;
   const item = state.items[0];
-  runQuestion(file, session, item.question, undefined, item.refs, undefined, item);
+  const target = directory().entries.get(item.doc || file.id)?.item;
+  if (!target) { state.stopped = true; return; }
+  if (target.deferred) { loadFile(target).then(() => drainQueue(target, session)).catch(e => toast(e.message)); return; }
+  if (hasProposal(target, session)) return;
+  runQuestion(target, session, item.question, undefined, item.refs, undefined, item);
 }
 async function ask(q, editIndex, editRefs, resume) {
   if (!doc || !q.trim()) return;
   const file = doc, session = selectedSession(file);
   if (pendingUploads.get(session)) return toast("附件解析完成后即可发送");
+  session.lastAskedAt = Date.now();
   if (!online || editIndex !== undefined || resume) {
     if (sending.has(session)) return;
     if (resume) queueState(session).stopped = false;
@@ -1247,7 +1279,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
     0,
     editIndex ?? session.messages.length,
   );
-  if (hasProposal(owner, prefix)) {
+  if (hasProposal(owner, session, prefix)) {
     toast("请先处理当前文件中的待采纳修改");
     return;
   }
@@ -1255,6 +1287,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
     r.kind === "file" ? { ...r, title: referenceLabel(r) } : { ...r },
   );
   const msg = {
+    fileId: owner.id,
     q,
     refsUsed: refs,
     createdAt: resume?.createdAt || Date.now(),
@@ -1336,7 +1369,9 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
       Object.assign(msg, {
         answer: r.answer,
         answerEntry: r.answerEntry,
+        userEntry: r.userEntry,
         toolCalls: r.toolCalls,
+        written: r.written,
         compactions: r.compactions,
         skillsUsed: r.skillsUsed,
         elapsedMs: Date.now() - msg.createdAt,
@@ -1354,8 +1389,10 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
         rawMode = true;
       session.conversationId = r.conversationId;
       delete session.pausedQuestion;
-      if (r.delivery)
-        msg.refs = archiveDelivery(owner, r.delivery).map((c) => c.id);
+      if (r.delivery) {
+        await loadChangeTargets(r.delivery);
+        msg.written = msg.refs = archiveDelivery(owner, r.delivery).map(c => c.id);
+      }
       finish();
       if (r.delivery) {
         if (folders.includes(doc) || r.delivery.changes?.some(change => change.id === doc?.id))
@@ -1427,6 +1464,10 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
   finish();
   chat();
 }
+async function loadChangeTargets(output) {
+  const index = directory();
+  await Promise.all((output.changes || []).map(c => loadFile(index.entries.get(c.id)?.item)));
+}
 function archiveDelivery(owner, output, title = owner.title) {
   const files = applyDelivery(docs, folders, owner, output, title, documentBody);
   for (const file of files) reveal(file.parent);
@@ -1435,12 +1476,13 @@ function archiveDelivery(owner, output, title = owner.title) {
 }
 async function setup() {
   decorate();
-  const saved = await boot(snapshot, setModels);
+  const saved = await boot(snapshot, setModels, configureNavigation);
   const initial = saved || await exampleWorkspace();
   folders.push(...initial.folders);
   docs.push(...initial.docs);
+  chats.push(...initial.chats || []);
   completionEnabled = initial.completionEnabled !== false;
-  if (!saved || migrateDirectory(docs, folders)) changed();
+  if (!saved) { migrateDirectory(docs, folders); changed(); }
   if (!saved) await flush();
   doc = saved ? firstDocument() : docs[0];
   if (!online)
@@ -1493,8 +1535,12 @@ async function setup() {
   $("renderMode").onclick = () => setHtmlMode(false);
   $("sourceMode").onclick = () => setHtmlMode(true);
   closeDirectoryDrawer = installLayout();
-  if (doc) openDoc(doc);
-  else openFirstFile();
+  const addressFile = () => {
+    const key = addressKey();
+    return key ? [...docs, ...folders].find(f => (f.key || f.id) === key) : firstDocument() || folders[0];
+  };
+  await openDoc(addressFile(), true);
+  window.addEventListener("popstate", () => openDoc(addressFile(), true));
   $("title").oninput = (e) => {
     doc.title = e.target.value.trim() || "未命名文档";
     changed();
@@ -1553,8 +1599,10 @@ async function setup() {
             )
             .join("") +
           "</select>",
-        ({ id }) => {
-          openDoc(choices.find((d) => d.id === id));
+        async ({ id }) => {
+          const target = choices.find(d => d.id === id);
+          await openDoc(target);
+          if (doc !== target) return;
           editor.chain().focus("end").setImage({ src, alt: "画布选区" }).run();
           toast("画布图片已插入正文");
         },
@@ -1584,6 +1632,7 @@ async function setup() {
   installWorkspaceSettings();
   $("assistantToggle").onclick = () => {
     openAgent = !openAgent;
+    if (openAgent && doc) { latestSession(doc); switchComposer(selectedSession(doc)); chat(); }
     header();
   };
   $("closeAgent").onclick = () => {
@@ -1593,23 +1642,19 @@ async function setup() {
 
   $("newChat").onclick = () => {
     const file = doc;
-    const session = {
-      id: crypto.randomUUID(),
-      messages: [],
-      updatedAt: Date.now(),
-    };
-    sessions(file).push(session);
+    const session = newSession(file);
     selectChat(file, session);
     composer.focus();
   };
   $("chatHistory").onclick = openChatHistory;
-  $("closeHistory").onclick = () => $("historyDialog").close();
+  $("closeHistory").onclick = () => $("historyDialog").hidePopover();
 
   $("generationRuns").onclick = () => {
     const file = doc;
     openGenerationLog(file, async (output) => {
       if (!docs.includes(file) && !folders.includes(file))
         throw Error("源文档已移除");
+      await loadChangeTargets(output);
       archiveDelivery(file, output);
       await flush();
       tree();
@@ -1618,7 +1663,7 @@ async function setup() {
   };
   $("share").onclick = () => shareFile(doc);
 }
-(/\/s\/[^/]+$/.test(location.pathname) ? publicBoard() : setup()).catch((e) => {
+(document.querySelector("meta[name=public-token]") ? publicBoard() : setup()).catch((e) => {
   console.error(e);
   toast("初始化失败：" + e.message);
 });

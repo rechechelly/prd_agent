@@ -10,7 +10,7 @@ export async function conversationFor(h, session, rewind) {
   const prefix = session.messages.slice(0, rewind ?? session.messages.length);
   const previous = prefix.at(-1);
   if (!previous) return h.createConversation(ownership, ctx);
-  let checkpoint = previous.answerEntry;
+  let checkpoint = previous.userOnly ? previous.userEntry : previous.answerEntry;
   if (!checkpoint) {
     // Older saved turns have no entry IDs. Match their successful question/answer pairs in order.
     const { entries } = await root.context(ctx);

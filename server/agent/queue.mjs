@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
@@ -86,4 +86,12 @@ export async function consumeQueued(tx, id) {
   const queue = await tx.doc(Queue);
   if (queue.items[0]?.requestId !== id) fault("消息队列已更新，请重试", 409);
   queue.items.shift();
+}
+
+// Serialize removal with short-lived queue readers as well as the durable writer.
+export function removeTranscript(path) {
+  return exclusive(path, async () => {
+    if (writers.has(path)) fault("请先暂停正在运行的会话", 409);
+    for (const suffix of ["", "-wal", "-shm"]) await rm(path + suffix, { force: true });
+  });
 }

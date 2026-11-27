@@ -1,3 +1,4 @@
+import { packWorkspace } from "./workspace/save-records";
 import { $, toast } from "./shared";
 export const online =
   location.protocol === "http:" || location.protocol === "https:";
@@ -82,12 +83,13 @@ let revision = 0,
   dirty = false,
   readState,
   conflict = false;
-export async function boot(read, setModels) {
+export async function boot(read, setModels, setOwner) {
   if (!online) return;
   const data = await api("workspace");
   readState = read;
   revision = data.revision;
   setModels(data);
+  setOwner(data.owner);
   $("saved").textContent = "已保存";
   $("logout").hidden = false;
   $("logout").onclick = async () => {
@@ -122,9 +124,12 @@ export async function flush() {
   if (!dirty) return;
   dirty = false;
   const data = readState();
-  pending = api("workspace", { revision, data })
+  const { packed, saved } = packWorkspace(data);
+  pending = api("workspace", { revision, data: packed })
     .then((r) => {
       revision = r.revision;
+      saved();
+      for (const file of [...data.docs, ...data.folders]) if (r.keys?.[file.id]) file.key = r.keys[file.id];
       $("saved").textContent = dirty ? "待保存" : "已保存";
     })
     .catch((e) => {
@@ -136,4 +141,24 @@ export async function flush() {
     .finally(() => (pending = null));
   await pending;
   if (dirty) await flush();
+}
+
+export async function readFileDetail(id) {
+  await flush();
+  const expected = revision;
+  const result = await api("workspace/file?id=" + encodeURIComponent(id));
+  if (result.revision !== expected && result.revision !== revision)
+    throw Error("工作区已在其他窗口更新，请刷新后继续");
+  return result;
+}
+
+export async function forkChat(input, add) {
+  await flush();
+  while (pending) await pending;
+  pending = api("agent/fork", { ...input, revision }).then(result => {
+    revision = result.revision;
+    add(result.branch);
+    return result.branch;
+  }).finally(() => { pending = null; });
+  return pending;
 }

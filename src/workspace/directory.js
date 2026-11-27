@@ -165,7 +165,7 @@ export function renderDirectory(options) {
       // Navigation redraws the tree, so the second click may land on a new DOM node.
       if (
         e.detail &&
-        previousClick?.key === entry.key &&
+        selected(entry) && previousClick?.key === entry.key &&
         now - previousClick.at < 380
       ) {
         previousClick = null;

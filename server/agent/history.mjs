@@ -243,9 +243,22 @@ export function agentHistory(docId, sessionId, tool) {
       else turn.control = data.status;
       if (data.editIndex !== undefined) turn.editIndex = data.editIndex;
       if (data.refs) turn.refsUsed = data.refs;
+      if (data.fileId) turn.fileId = data.fileId;
     }
     return { turns };
   } finally {
     db.close();
   }
+}
+
+export function sessionStore(session) {
+  return transcriptPath(session.storeDoc ?? session.sourceId, session.storeChat ?? session.id);
+}
+
+// The admission's entry remains the original user node across host continuations.
+export function submittedUserEntry(path, requestId) {
+  const db = new DatabaseSync(path, {readOnly:true});
+  try {
+    return db.prepare("SELECT json_extract(record,'$.entry') AS entry FROM submissions WHERE request_id=? ORDER BY id LIMIT 1").get(requestId)?.entry;
+  } finally { db.close(); }
 }

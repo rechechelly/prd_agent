@@ -1,5 +1,5 @@
-import { boardType, generatedFiles, storedDocumentType } from "../../shared/workspace-files.mjs";
-import { migrateExternalReviews } from "../chat/chat-sessions";
+import { boardType, generatedFiles, storedDocumentType } from "./workspace-files.mjs";
+
 
 export function lastVersion(d) {
   return Math.max(
@@ -10,9 +10,6 @@ export function lastVersion(d) {
 
 export function migrateDirectory(docs, folders) {
   let migrated = false;
-  for (const file of [...docs, ...folders]) {
-    if (migrateExternalReviews(file)) migrated = true;
-  }
   const groups = new Map();
   const locations = [...docs, ...folders];
   for (const owner of docs)

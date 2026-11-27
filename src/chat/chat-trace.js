@@ -10,6 +10,7 @@ export const readTurns = async (file, session) =>
 export function findTurn(turns, msg) {
   return turns.findLast(
     (t) =>
+      (msg.userEntry && msg.userEntry === t.entry) ||
       (msg.requestId && msg.requestId === t.requestId) ||
       (msg.answerEntry &&
         (t.answerEntry === msg.answerEntry ||

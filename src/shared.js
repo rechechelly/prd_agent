@@ -8,6 +8,7 @@ export const esc = (value) =>
       ],
   );
 const paths = {
+  branch: "M6 4v14 M6 14c0-5 12-2 12-9 M4 4a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M16 4a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M4 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
   quote: "M4 6h6v7H6c0 2 1 3 3 4l-1 2c-3-1-5-4-5-7z M15 6h6v7h-4c0 2 1 3 3 4l-1 2c-3-1-5-4-5-7z",
   pencil: "M4 16l11-11 4 4L8 20l-5 1z M13 7l4 4",
   chat: "M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2z",

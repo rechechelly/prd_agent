@@ -12,7 +12,7 @@ import {
   continueProse,
   correctToolResult,
 } from "./prompts.mjs";
-import { agentHistory, chatStorageId, pausedRequest, pauseKind, transcriptPath } from "./history.mjs";
+import { agentHistory, pausedRequest, pauseKind, transcriptPath, sessionStore, submittedUserEntry } from "./history.mjs";
 import { diagnostic, toolProgress } from "./stream.mjs";
 import { onlineWorkspace } from "../workspace/online-files.mjs";
 import { toolReply } from "./text-tool.mjs";
@@ -43,6 +43,7 @@ import { openChatHarness, closeChatHarness, consumeQueued, messageQueue, Workspa
 import { readWorkspaceCheckpoint, workspaceCheckpoints } from "./workspace-checkpoint.mjs";
 import { directory, fault, seal, unseal } from "../storage.mjs";
 const active = new Map();
+export const isSessionRunning = session => active.has(sessionStore(session));
 const validId = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
 const paused = Symbol("paused");
 export async function pauseAgent(docId, sessionId, attemptId) {
@@ -68,7 +69,8 @@ export async function runAgent(
   { progress, signal } = {},
 ) {
   const ownerId = doc.id;
-  const identity = transcriptPath(chatStorageId(doc), session?.id);
+  const storeDoc = session.storeDoc ?? session.sourceId, storeChat = session.storeChat ?? session.id;
+  const identity = transcriptPath(storeDoc, storeChat);
   if (active.has(identity)) fault("这篇文档的助手正在运行", 409);
   const requestId = validId(req.requestId) ? req.requestId : randomUUID();
   const attemptId = validId(req.attemptId) ? req.attemptId : requestId;
@@ -103,7 +105,9 @@ export async function runAgent(
       fault("暂停状态已变化，请刷新会话后继续", 409);
     const continuing = !!bookmark && req.requestId === bookmark.requestId;
     let saved;
-    if (bookmark) {
+    const stagedOwner = bookmark?.fileId || session.sourceId;
+    if (continuing && stagedOwner !== ownerId) fault("继续请求时需要使用原文件", 409);
+    if (bookmark && stagedOwner === ownerId) {
       keepStage = true;
       stage = path.join(directory, "agent-work", bookmark.stage);
       saved = await readWorkspaceCheckpoint(stage, identity, bookmark);
@@ -188,7 +192,7 @@ export async function runAgent(
     network = await openTaskNetwork(stage, req.externalApi);
     const { models, deepseek } = runtimeModels(p);
     const toolCalls = continuing
-      ? agentHistory(chatStorageId(doc), session?.id).turns.findLast(t => t.requestId === requestId)?.toolCalls.filter(c => c.status !== "running") || saved.toolCalls || []
+      ? agentHistory(storeDoc, storeChat).turns.findLast(t => t.requestId === requestId)?.toolCalls.filter(c => c.status !== "running") || saved.toolCalls || []
       : [];
     const canvas = boardType(doc.type),
       drawing = { patch: saved?.drawing };
@@ -502,7 +506,7 @@ export async function runAgent(
       const snapshot = await work.snapshot();
       work.bind(admission);
       const next = {
-        status: "submitted", admission, snapshot, requestId,
+        status: "submitted", admission, snapshot, requestId, fileId: ownerId,
         stage: path.basename(stage), conversationId: root.id,
         ...(p.modelId && { modelId: p.modelId }),
         refs: req.refs || [],
@@ -529,7 +533,7 @@ export async function runAgent(
         (await tx.doc(WorkspaceRun)).current = null;
         await tx.appendEntry(root.id, {
           kind: pauseKind, data: {
-            status: "paused", requestId, attemptId, stage: associated.stage,
+            status: "paused", requestId, attemptId, fileId: ownerId, stage: associated.stage,
             snapshot: associated.snapshot, admission: associated.admission,
             ...(req.editIndex !== undefined && { editIndex: req.editIndex }), refs: req.refs || [],
           },
@@ -700,6 +704,7 @@ export async function runAgent(
         : "已生成正文修改，可预览后采用。");
     const out = {
       answer,
+      userEntry: submittedUserEntry(identity, requestId),
       ...(hasFiles() && {
         workspaceFiles: workspace.entries.map((f) =>
           typeof f.html === "string" ? { ...f, html: restoreImages(f.html) } : f,
@@ -724,7 +729,7 @@ export async function runAgent(
     // A lost HTTP response can be retrieved by request ID without re-executing the model.
     await root.commit(async tx => {
       (await tx.doc(WorkspaceAnswer)).result = JSON.parse(JSON.stringify(out));
-      (await tx.doc(WorkspaceRun)).current = { status: "completed", requestId, refs: req.refs || [],
+      (await tx.doc(WorkspaceRun)).current = { status: "completed", requestId, fileId: ownerId, refs: req.refs || [],
         ...(req.editIndex !== undefined && { editIndex: req.editIndex }) };
     }, ctx);
     keepStage = false;

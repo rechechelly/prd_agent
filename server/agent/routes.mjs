@@ -4,7 +4,8 @@ import { completionMessages } from "../models/completion.mjs";
 import { modelConfig } from "../models/providers.mjs";
 import { fault } from "../storage.mjs";
 import { recordWorkspaceFiles } from "../workspace/generation-log.mjs";
-import { agentHistory, chatStorageId, transcriptPath } from "./history.mjs";
+import { relatedFiles } from "../../shared/chat-sessions.mjs";
+import { agentHistory, transcriptPath } from "./history.mjs";
 import { messageQueue } from "./queue.mjs";
 import { pauseAgent, recoverableRequest, runAgent } from "./run.mjs";
 import { agentStream } from "./stream.mjs";
@@ -25,17 +26,18 @@ function resolveChatFile(files, id, version) {
 }
 
 function queueCommand(path, input) {
-  const { action, requestId, question, refs = [], modelId } = input;
+  const { action, requestId, question, refs = [], modelId, doc } = input;
   if (!["list", "add", "prioritize"].includes(action)) fault("未知的队列操作");
   if (action !== "list" && !/^[0-9a-f-]{36}$/i.test(requestId || "")) fault("消息编号无效");
   if (action !== "add") return messageQueue(path, action, { requestId });
   if (typeof question !== "string" || !question.trim() || !Array.isArray(refs)) fault("消息内容无效");
-  return messageQueue(path, action, { requestId, question, refs, ...(modelId && { modelId }), createdAt: Date.now() });
+  return messageQueue(path, action, { requestId, question, refs, doc, ...(modelId && { modelId }), createdAt: Date.now() });
 }
 
 function archiveResponse(file, out, input) {
   if (!out.workspaceFiles) return out;
   const { workspaceFiles, workspaceChanges, ...chat } = out;
+  chat.written = [...new Set([...workspaceFiles, ...(workspaceChanges || [])].map(f => f.id))];
   const delivery = recordWorkspaceFiles(file.id, workspaceFiles, workspaceChanges, input.question,
     input.chatId, out.conversationId, out.answerEntry ?? input.requestId);
   // An acknowledged delivery is already present in the saved workspace.
@@ -46,24 +48,26 @@ function archiveResponse(file, out, input) {
   return { ...chat, answer: summary.join("。") + "。", delivery };
 }
 
-export async function agentRoute(url, req, res, files, input) {
+export async function agentRoute(url, req, res, files, chats, input) {
   const path = url.pathname;
+  const findSession = (file, id) => chats.find(s => s.id === id && relatedFiles(s).includes(file.id));
   if (path === "/api/agent/history" && req.method === "GET") {
     const version = url.searchParams.get("prdVersion");
     const file = resolveChatFile(files, url.searchParams.get("doc"), version === null ? undefined : Number(version));
     const chatId = url.searchParams.get("chatId");
-    if (!(file.chatSessions || [{ id: "legacy" }]).some(s => s.id === chatId))
+    const session = findSession(file, chatId);
+    if (!session)
       fault("会话不存在", 404);
-    const storeId = chatStorageId(file), tool = url.searchParams.get("tool");
-    const work = tool === null && await recoverableRequest(transcriptPath(storeId, chatId));
-    const history = agentHistory(storeId, chatId, tool);
+    const storeId = session.storeDoc ?? session.sourceId, storeChat = session.storeChat ?? chatId, tool = url.searchParams.get("tool");
+    const work = tool === null && await recoverableRequest(transcriptPath(storeId, storeChat));
+    const history = agentHistory(storeId, storeChat, tool);
     if (tool === null) {
       const turn = work && history.turns.findLast(t => t.requestId === work.requestId);
-      const session = file.chatSessions?.find(s => s.id === chatId);
       if (turn && !session?.messages.some(m => m.requestId === turn.requestId)) {
         turn.control = work.status === "completed" ? "ready" : "paused";
         turn.editIndex = work.editIndex;
         turn.refsUsed = work.refs;
+        turn.fileId = work.fileId || session.sourceId;
       }
     }
     return history;
@@ -80,24 +84,22 @@ export async function agentRoute(url, req, res, files, input) {
     return { text };
   }
   if (path === "/api/agent" && input.mode !== "chat") fault("请通过 Agent 对话创建文件");
-  const session = file.chatSessions?.find(s => s.id === input.chatId);
-  if (!session && input.chatId === "legacy" && !file.chatSessions && path === "/api/agent/queue" && input.action === "list")
-    return { items: [] };
-  if (input.chatId !== undefined && !session) fault("会话不存在，请刷新工作区", 409);
-
-  const storeId = chatStorageId(file);
-  if (path === "/api/agent/pause") return pauseAgent(storeId, input.chatId, input.attemptId);
+  const session = findSession(file, input.chatId);
+  if (!session) fault("会话不存在，请刷新工作区", 409);
+  const storeId = session.storeDoc ?? session.sourceId, storeChat = session.storeChat ?? session.id;
+  if (path === "/api/agent/pause") return pauseAgent(storeId, storeChat, input.attemptId);
   if (path === "/api/agent/queue" || input.queued) {
-    if (!session) fault("会话不存在", 404);
-    const store = transcriptPath(storeId, session.id);
+    const store = transcriptPath(storeId, storeChat);
     if (path === "/api/agent/queue") return { items: await queueCommand(store, input) };
     const [head] = await messageQueue(store);
-    if (head?.requestId === input.requestId)
+    if (head?.requestId === input.requestId) {
+      if (head.doc && head.doc !== file.id) fault("排队消息与目标文件不符", 409);
       Object.assign(input, { question: head.question, refs: head.refs, modelId: head.modelId });
+    }
     else if ((await recoverableRequest(store))?.requestId !== input.requestId)
       fault("消息队列已更新", 409);
   }
-  if (input.editIndex !== undefined && (!session || !Number.isSafeInteger(input.editIndex) ||
+  if (input.editIndex !== undefined && (!Number.isSafeInteger(input.editIndex) ||
       input.editIndex < 0 || input.editIndex >= session.messages.length))
     fault("要编辑的消息不存在", 409);
 

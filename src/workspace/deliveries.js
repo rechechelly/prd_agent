@@ -2,7 +2,7 @@ import { boardType, generatedFiles } from "../../shared/workspace-files.mjs";
 import { sceneVersion } from "../../shared/canvas-model.mjs";
 import { emptyHtml } from "./html-source";
 import { proposedScene } from "./board";
-import { lastVersion } from "./migration";
+import { lastVersion } from "../../shared/migrate-directory.mjs";
 
 function applyWorkspaceFiles(docs, folders, output, documentBody) {
   const all = new Map([...docs, ...folders].map((f) => [f.id, f]));
