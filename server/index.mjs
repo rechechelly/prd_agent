@@ -7,7 +7,7 @@ import {
   skillPackage,
   migrateWritingRule,
 } from "./skills.mjs";
-import { findDelivery as findOutput } from "../shared/workspace-files.mjs";
+import { findDelivery as findOutput, storedDocumentType } from "../shared/workspace-files.mjs";
 import {
   fileShareState,
   lookupShare,
@@ -115,6 +115,16 @@ function saveWorkspace(input) {
     const previous = current?.revision || 0;
     if (input.revision !== previous)
       fault("其他窗口已保存新版，请先保留本窗口修改，再刷新载入最新版本", 409);
+    for (const file of w.docs) {
+      const type = file && typeof file === "object" && !Array.isArray(file) && storedDocumentType(file.type);
+      if (!type) fault("在线文件类型仅支持文档、原型画布和 HTML，文件夹请保存到文件夹列表");
+      file.type = type;
+    }
+    for (const folder of w.folders) {
+      if (!folder || typeof folder !== "object" || Array.isArray(folder) ||
+          (folder.type != null && folder.type !== "文件夹")) fault("文件夹类型无效");
+      folder.type = "文件夹";
+    }
     db.prepare("INSERT OR REPLACE INTO state VALUES(1,?,?)").run(
       previous + 1,
       JSON.stringify(w),

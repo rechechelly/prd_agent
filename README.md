@@ -36,6 +36,8 @@ npm start
 
 ## 在工作台中工作
 
+文件目录支持新建文件夹、文档、原型画布和 HTML。手动编辑会自动保存到当前在线文件，连续输入时默认在停顿 600 毫秒后保存。Agent 对已有文件提出的修改可以先预览，点击 Keep 后写入同一文件。
+
 - **文档**支持图文、表格、标题目录、行级工具栏、划词与框选格式化。打开 AI 补全后，输入会触发 Markdown 续写建议。快速连按两次 Tab 可在光标处立即生成或换一版，单按 Tab 采纳，Esc 关闭。标题、列表和代码块按文档格式插入。
 - **HTML** 是单文件原型。Raw Text 编辑源码并展示 Agent 提议的差异，渲染模式预览修改效果。可以逐处保留或放弃修改。
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
@@ -74,7 +76,7 @@ npm start
 | 行为 | 默认值和含义 | 调整位置 |
 | --- | --- | --- |
 | Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
-| 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。工作副本连续 2 次没有进展后停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
+| 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。连续 2 次续写都没有推进文件修改时停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
 | Agent 模型预算 | 模型适配层声明 128,000 token 上下文窗口；`XUYE_MAX_OUTPUT_TOKENS` 默认为 32,768，可设置为 1–127,999。部署时按实际模型支持的上限配置 | `server/agent/model.mjs` |
 | 文档补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token | `src/editor/document-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
 | 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
@@ -86,7 +88,7 @@ npm start
 | --- | --- | --- |
 | 在线工作区 | `list_online_files`、`read_online_file`、`write_online_file`、`edit_online_file` | 使用在线文件 ID 或相对整个工作区根目录的路径，例如 `需求/原型`。从 A 开启会话也可以读写 B。读取和修改省略目标时定位 A；在 A 下创建子文件时指定 `parent_id` 为 A 的 ID。 |
 | 在线画布和 PRD | `draw_online_canvas`、`embed_view_screenshots` | 按在线文件定位画布，或把配套 HTML 截图嵌入指定文档。 |
-| 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 制作本地草稿，用 Bash 运行脚本或解析二进制原件。 |
+| 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 编写技能与脚本，用 Bash 运行脚本或解析二进制原件。 |
 | 工作台技能与会话 | `skill_load`、`compact_context` | 前者按名称加载技能入口。后者是工作台为模型提供的操作，调用 Pi 的 `Conversation.compact`。Pi 自带的阈值压缩和上下文溢出恢复也会自动运行。 |
 
 工作区使用数据库保存文件树。在线工具只在这棵树里解析名称和 ID。比如 `read_online_file({path:"需求/说明"})` 读取在线文档，`read({path:"upload-….txt"})` 读取本次任务的附件。直接修改在线正文可用 `edit_online_file({id:"A",old_text:"原句",content:"新句"})`。长文可用同一工具的 `append` 参数分段追加，并用 `read_online_file` 核对结果。
@@ -99,7 +101,7 @@ npm start
 
 工作台为每个文件会话分配独立的 SQLite 存储。消息通过 `Conversation.submit` 提交，服务等待 `Submission.wait` 返回结果。工具的输入和返回值来自已提交的 Pi 记录，界面的实时执行提示订阅 Pi 的 `ToolTask` 钩子。工作台另外负责把用户点击 Keep 的修改应用到相应在线文件。暂停使用 `Conversation.abort`，继续使用 `type: "continue"`。
 
-输入框上方可调整顺序的待发送消息保存在应用定义的 Pi 会话文档中。排队的消息正式提交时，出队和创建 submission 使用同一笔 Pi 事务。服务还用 Pi 事务把工具结果与相应的在线文件草稿关联。若进程在工具完成后退出，重新连接原请求会取回已提交的草稿与执行记录。交付归档使用单独的工作区事务，同一个已完成答复可以安全重取。
+输入框上方可调整顺序的待发送消息保存在应用定义的 Pi 会话文档中。排队的消息正式提交时，出队和创建 submission 使用同一笔 Pi 事务。服务还用 Pi 事务把工具结果与相应的文件修改快照关联。若进程在工具完成后退出，重新连接原请求会取回已提交的修改与执行记录。交付归档使用单独的工作区事务，同一个已完成答复可以安全重取。
 
 进程在工具执行中退出时，Pi 根据工具声明的 `replay` 策略恢复。`list_online_files` 和 `read_online_file` 只查询在线工作区，显式声明为 `safe`，SDK 可以重新执行。在线写入和画布修改沿用默认的 `unsafe`。锁定的 Pi 1.6.0 中，四个原生系统工具同样使用 `unsafe`。这类调用中断时，模型会收到中断结果，可以先读取实际状态，再决定下一步。已提交的工具结果保存在会话中。[Pi Durable 官方文档](https://github.com/earendil-works/pi/blob/main/packages/durable/README.md)
 
@@ -107,7 +109,7 @@ npm start
 
 每个技能以 `SKILL.md` 为入口，YAML frontmatter 至少包含与目录名一致的 `name` 和说明用途的 `description`。发现阶段只提供元数据。匹配后，`skill_load` 返回入口正文和基准路径。Agent 可按入口说明用 `read` 打开 `references/` 中的资料，用 `bash` 执行 `scripts/` 中的脚本。显式指定 `/skill:名称` 会随当前请求加载入口。也可直接在「工作区设置 → Agent 工具与技能」导入整个文件夹。额外技能搜索路径通过 `XUYE_SKILL_DIRS` 配置。
 
-要在对话中编写可复用技能，可以直接让 Agent 用 Pi 的 `write` 创建 `.agents/skills/review-prd/SKILL.md`，再写入同目录的 `references/checklist.md` 和 `scripts/check.py`。这个目录对应本工作区数据目录的 `skills/`，服务重启后仍可使用。符合格式的技能会在下一次请求时进入目录，后续可用 `edit` 继续维护，并可从设置页导出。
+要在对话中编写可复用技能，可以直接让 Agent 用 Pi 的 `write` 创建 `.agents/skills/review-prd/SKILL.md`，再写入同目录的 `references/checklist.md` 和 `scripts/check.py`。这个目录对应本工作区数据目录的 `skills/`，服务重启后仍可使用。每次向 Agent 发送新消息时，服务都会重新发现技能，把最新的名称和描述放入本次模型请求。创建、修改或删除技能后，继续在同一会话发送消息即可。已发出的请求使用发起时的技能目录。
 
 ## HTTP 接口
 

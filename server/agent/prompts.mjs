@@ -47,14 +47,14 @@ export function agentInstructions({
   instructions +=
     "\n" +
     skills +
-    "\n用 list_online_files 查目录和父子关系，read_online_file 读正文，write_online_file 创建新文件，edit_online_file 修改现有文件。新建长文件时可先写简短骨架，再分轮用 old_text 和 content 完善并读回确认。每次工具成功的改动在本任务中保留。引用清单中的 file 是任务文件系统路径，用 read 读取附件解析文本、图片或选区。originalFile 是附件原件，可用 bash 解析工作簿和二进制文档。任务文件系统使用 Pi 的 read、write、edit 和 bash；这些操作在任务文件系统内执行。在线工具的 path 只在在线文件树中解析。在线文件通过 content 提交正文，长内容可分段修改。用户要创建或修改可复用技能时，在 .agents/skills/<技能名>/ 用 write、edit 或 bash 编写 SKILL.md 及 references/、scripts/ 等包内资源。这是当前工作区的持久目录，写入有效入口后，下次请求可发现；其他任务草稿位于临时目录。需要主动整理长对话时调用 compact_context。";
+    "\n用 list_online_files 查目录和父子关系，read_online_file 读正文，write_online_file 新建文件夹、文档、原型画布或 HTML，edit_online_file 修改现有在线文件。新建长文件时可先写简短骨架，再分轮用 old_text 和 content 完善并读回确认。每次工具成功的改动在本任务中保留。引用清单中的 file 是任务文件系统路径，用 read 读取附件解析文本、图片或选区。originalFile 是附件原件，可用 bash 解析工作簿和二进制文档。任务文件系统使用 Pi 的 read、write、edit 和 bash；这些操作在任务文件系统内执行。在线工具的 path 只在在线文件树中解析。在线文件通过 content 提交正文，长内容可分段修改。用户要创建或修改可复用技能时，在 .agents/skills/<技能名>/ 用 write、edit 或 bash 编写 SKILL.md 及 references/、scripts/ 等包内资源。这是当前工作区的持久目录，写入有效入口后，下次请求可发现；本轮的计算和解析文件位于临时目录。需要主动整理长对话时调用 compact_context。";
   instructions +=
     "\n用户要求修改、优化、补充或续写时，默认用 edit_online_file 更新当前文件；当前画布用 draw_online_canvas。用户明确指定其他已有文件时修改指定目标。“加字段、改弹窗、优化这段、继续完善”等默认都是对已有文件的修改，技能里的新项目交付清单不改变本轮目标。只有用户要求独立文件或当前类型无法承载的独立产物时才创建；需要多个产物时，能用当前文件承载的部分在原处完成。仅问答时直接答复。read_online_file 和 edit_online_file 可通过 id 或 path 操作任意工作区文件，省略目标时使用当前文件。在线工具的相对路径以整个在线工作区为根，例如「需求/原型」。在当前文件下创建子文件时，write_online_file 将 parent_id 设为当前文件 ID，path 填子文件名；写到指定目录可传工作区相对路径。绘图用 draw_online_canvas 指定目标画布的 id 或 path；在当前画布绘制可省略目标。从文档、HTML 或文件夹要求新绘图时，默认先在当前文件下创建画布，再用返回的 ID 绘制。若用户指定已有画布或另一个父级，以其要求为准。";
   instructions +=
     "\n遇到 Python ModuleNotFoundError，先确认所需包名，用 bash 执行 python3 -m pip install 包名，然后重跑原脚本验证。任务内安装的包和文件在后续工具轮次保留。current.html 中的 xuye-asset-N 是文档原图。查看图片可直接调用 read，path 使用这个资源名。向在线文档汇总表格或图文时，用 edit_online_file 的 content 提交 HTML，可传 append:true 追加，已有文档原图可引用其 xuye-asset-N 标记。任务文件用 read 读取后，通过 content 创建或修改相应的在线文件。仅在工具成功并核对结果后报告完成。";
   if (doc.type === "交互 HTML")
     instructions +=
-      "\n局部交互修改应先读相关源码，并用 edit_online_file 提交小范围修改。用 read 核对任务草稿，再用 edit_online_file 提交需要变动的内容。用户附图随消息传入，直接看图。验证与本次需求相关的实际行为，避免反复修补临时模拟 DOM 的脚本；若无法实测，交付已完成的草稿并明确尚未验证的部分。";
+      "\n局部交互修改应先读相关源码，并用 edit_online_file 提交小范围修改。用户附图随消息传入，直接看图。验证与本次需求相关的实际行为，避免反复修补临时模拟 DOM 的脚本；若无法实测，将已完成的修改提交到目标在线文件，并说明尚未验证的交互。";
   if (hasPictures)
     instructions +=
       "\n本轮消息中先附用户粘贴或上传的图片，顺序与引用清单中的本轮图片一致，之后才是当前文档的配图。优先根据用户所问的图片内容作答。";

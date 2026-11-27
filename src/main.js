@@ -5,7 +5,7 @@ import { initModels, setModels, selectedModel } from "./workspace/providers";
 import { documentCompletion } from "./editor/document-completion";
 import { queueState, syncQueue, renderQueue } from "./chat/chat-queue";
 import { readTurns, findTurn, tracePanel } from "./chat/chat-trace";
-import { boardType } from "../shared/workspace-files.mjs";
+import { boardType, onlineFileTypes } from "../shared/workspace-files.mjs";
 import { emptyHtml, sourceEdits, installHtmlSource } from "./workspace/html-source";
 import { createDocumentEditor } from "./editor/document-editor";
 import { sceneVersion } from "../shared/canvas-model.mjs";
@@ -660,9 +660,13 @@ function openDoc(d) {
 }
 function create(parent = "") {
   const entry = directory().entries.get(parent);
+  const options = Object.entries(onlineFileTypes).map(([kind, value]) => {
+    const label = kind === "canvas" ? "原型画布" : kind === "html" ? "HTML" : value;
+    return '<option value="' + value + '">' + label + '</option>';
+  }).join("");
   dialog(
     entry ? "新建子文件" : "新建文件",
-    '<label for="kind">类型</label><select id="kind" name="kind"><option>文档</option><option>画布</option><option value="交互 HTML">HTML</option><option>文件夹</option></select>' +
+    '<label for="kind">类型</label><select id="kind" name="kind">' + options + '</select>' +
       '<label for="name">名称</label><input id="name" name="name" required autocomplete="off">' +
       "<p>位置：" +
       esc(

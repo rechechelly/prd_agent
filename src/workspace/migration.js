@@ -1,4 +1,4 @@
-import { boardType, generatedFiles } from "../../shared/workspace-files.mjs";
+import { boardType, generatedFiles, storedDocumentType } from "../../shared/workspace-files.mjs";
 import { migrateExternalReviews } from "../chat/chat-sessions";
 
 export function lastVersion(d) {
@@ -80,11 +80,7 @@ export function migrateDirectory(docs, folders) {
       migrated = true;
       continue;
     }
-    const type = boardType(d.type)
-      ? "画布"
-      : d.type === "交互 HTML"
-        ? d.type
-        : "文档";
+    const type = storedDocumentType(d.type) ?? "文档";
     if (type !== d.type) {
       d.type = type;
       migrated = true;

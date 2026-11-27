@@ -1,4 +1,16 @@
-export const boardType = (type) => type === "画布" || type === "原型画布";
+export const onlineFileTypes = Object.freeze({
+  document: "文档",
+  canvas: "画布",
+  html: "交互 HTML",
+  folder: "文件夹",
+});
+export const boardType = (type) => type === onlineFileTypes.canvas || type === "原型画布";
+export function storedDocumentType(type) {
+  if (boardType(type)) return onlineFileTypes.canvas;
+  if (type === onlineFileTypes.html || type === "HTML") return onlineFileTypes.html;
+  if (type == null || type === "文档" || type === "需求文档" || type === "备忘录")
+    return onlineFileTypes.document;
+}
 export const generatedId = (doc, version, file) =>
   doc + "-" + version + "-" + file;
 

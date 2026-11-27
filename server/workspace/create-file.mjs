@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineTool } from "@earendil-works/pi-durable";
 import { obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
-import { workspacePath } from "../../shared/workspace-files.mjs";
+import { onlineFileTypes, workspacePath } from "../../shared/workspace-files.mjs";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { editOnlineFileBody } from "../../shared/online-file-edit.mjs";
 import { resolveFile } from "../../shared/assistant-context.mjs";
@@ -11,12 +11,6 @@ import {
   validateDrawing,
 } from "../../shared/canvas-model.mjs";
 
-const types = {
-  folder: "文件夹",
-  document: "文档",
-  canvas: "画布",
-  html: "交互 HTML",
-};
 const reply = (text, isError = false) => ({
   output: [{ type: "text", text }],
   isError,
@@ -238,7 +232,7 @@ export function workspaceCreation(nodes, currentId, current) {
     description: toolDescriptions.write_online_file,
     parameters: obj({
       path: str(),
-      type: oneOf(Object.keys(types)),
+      type: oneOf(Object.keys(onlineFileTypes)),
       parent_id: opt(
         str({
           description: "在线父文件 ID；省略时从工作区根目录创建",
@@ -267,7 +261,7 @@ export function workspaceCreation(nodes, currentId, current) {
           material.html !== undefined &&
           Buffer.byteLength(material.html) > 12_000_000
         )
-          throw Error("单文件超过 12 MB 工作副本限制");
+          throw Error("单个在线文件不能超过 12 MB");
         if (type === "canvas" && material.html) {
           const parsed = JSON.parse(material.html);
           if (!Array.isArray(parsed?.elements))
@@ -287,7 +281,7 @@ export function workspaceCreation(nodes, currentId, current) {
           if (leaf && item) {
             if (
               !entries.some((f) => f.id === item.id) ||
-              item.type !== types[type] ||
+              item.type !== onlineFileTypes[type] ||
               ["html", "drawing"].some(
                 (k) => JSON.stringify(item[k]) !== JSON.stringify(material[k]),
               )
@@ -300,7 +294,7 @@ export function workspaceCreation(nodes, currentId, current) {
               id: randomUUID(),
               parent,
               title,
-              type: leaf ? types[type] : "文件夹",
+              type: leaf ? onlineFileTypes[type] : "文件夹",
               ...(leaf && material),
             };
             pending.push(item);
