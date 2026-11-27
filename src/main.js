@@ -12,7 +12,7 @@ import { emptyHtml, sourceEdits } from "./workspace/html-source";
 import { createDocumentEditor } from "./editor/document-editor";
 import { sceneVersion } from "../shared/canvas-model.mjs";
 import { targetsFile } from "../shared/chat-sessions.mjs";
-import { editableTab, historyPopover } from "./chat/session-controls";
+import { editableTab, historyPopover, installContextWindow } from "./chat/session-controls";
 import { configureNavigation, addressKey, visitFile, loadFile } from "./workspace/navigation";
 import { chats, sessions, newSession, latestSession, chooseSession, selectedSession, sessionName } from "./chat/chat-sessions";
 import { installComposer } from "./chat/composer";
@@ -76,7 +76,7 @@ const sending = new Map();
 const edits = new WeakMap();
 const draftsBySession = new WeakMap();
 const pendingUploads = new WeakMap();
-let composerSession, composer;
+let composerSession, composer, renderContextWindow;
 let closeDirectoryDrawer;
 function switchComposer(target) {
   if (composerSession === target) return;
@@ -896,6 +896,15 @@ function updateChatProgress(pending) {
   panel.querySelector("pre").textContent = pending.partial;
 }
 const transcripts = new WeakMap();
+function currentContext() {
+  const session = composerSession;
+  const pending = sending.get(session), turns = transcripts.get(session)?.turns || [];
+  const last = pending?.editIndex == null ? session?.messages.at(-1) : session.messages[pending.editIndex - 1];
+  const paused = !pending && turns.findLast(t => t.control === "paused" || t.control === "ready");
+  const used = pending?.contextTokens ?? (paused || last)?.contextTokens ??
+    (last && findTurn(turns, last)?.contextTokens) ?? (pending || last || paused ? null : 0);
+  return { session, used };
+}
 function loadTranscript(file, session) {
   const initial = !transcripts.has(session);
   const state = { turns: transcripts.get(session)?.turns || [] };
@@ -924,6 +933,7 @@ function chat(focusIndex) {
   area.replaceChildren();
   const file = doc,
     session = selectedSession(file);
+  renderContextWindow();
   const pending = sending.get(session);
   const messages = session.messages.slice(
     0,
@@ -1363,6 +1373,10 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
         },
         pending.controller,
         (event) => {
+          if (event.contextTokens != null && event.contextTokens !== pending.contextTokens) {
+            pending.contextTokens = event.contextTokens;
+            if (composerSession === session) renderContextWindow();
+          }
           if (event.canPause && !pending.canPause) {
             pending.canPause = true;
             admit();
@@ -1387,6 +1401,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
         toolCalls: r.toolCalls,
         written: r.written,
         compactions: r.compactions,
+        contextTokens: r.contextTokens,
         skillsUsed: r.skillsUsed,
         elapsedMs: Date.now() - msg.createdAt,
         canvasPatch: r.canvasPatch,
@@ -1524,6 +1539,7 @@ async function setup() {
     },
   });
   composer = installComposer(ask);
+  renderContextWindow = installContextWindow(currentContext);
   sourceEditor = installSourceEditor({
     completion: codeCompletion,
     quote: () => quoteSelection(),

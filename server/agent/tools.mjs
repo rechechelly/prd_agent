@@ -1,4 +1,5 @@
 import { defineTextTool } from "./text-tool.mjs";
+import { onlineBatchTool } from "../workspace/batch-tool.mjs";
 import { onlineFileTools } from "../workspace/file-tools.mjs";
 import { checkOnlineFileSize } from "../workspace/online-files.mjs";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -42,13 +43,13 @@ export function createAgentTools({
   const availableTools = [
     ...onlineFileTools(workspace),
     ...taskFileTools(env.cwd, inputs),
-    defineTextTool({
+    onlineBatchTool(workspace, {
       name: "embed_view_screenshots",
       description: toolDescriptions.embed_view_screenshots,
       parameters: obj({ document_id: str(), html_id: str() }),
-      async execute({ document_id, html_id }) {
-        const document = workspace.target(document_id),
-          page = workspace.target(html_id);
+      async execute(draft, { document_id, html_id }) {
+        const document = draft.target(document_id),
+          page = draft.target(html_id);
         if (storedDocumentType(document.type) !== "文档" || storedDocumentType(page.type) !== "交互 HTML")
           throw Error("请指定文档和 HTML 文件的 ID");
         if (!document.html?.trim() || !page.html?.trim())
@@ -57,7 +58,7 @@ export function createAgentTools({
           prd: document.html,
           html: restoreImages(page.html),
         });
-        return workspace.edit({ id: document.id, content: result.prd });
+        return draft.edit({ id: document.id, content: result.prd });
       },
     }),
     defineTextTool({

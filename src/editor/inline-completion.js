@@ -124,7 +124,7 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
   function accept(result) {
     if (result !== candidate || !result.current()) return;
     const tr = closeHistory(view.state.tr);
-    editOnlineFileBody(getFile().id, tr.doc, result, (from, to, content) => {
+    editOnlineFileBody(getFile().id, tr.doc, [result], (from, to, content) => {
       if (typeof content === "string") tr.insertText(content, from, to);
       else TextSelection.create(tr.doc, from, to).replace(tr, content);
       tr.setSelection(TextSelection.near(tr.doc.resolve(tr.mapping.map(to)), -1));

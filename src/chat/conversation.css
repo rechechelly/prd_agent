@@ -25,6 +25,21 @@
 #messageQueue li span { display: inline-block; width: calc(100% - 6em); vertical-align: middle; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #messageQueue button { color: var(--purple); font-size: inherit; padding: 3px 6px; }
 
+.contextMeter { position: relative; flex: none; }
+#agentContextWindow { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; }
+#agentContextWindow::before {
+  content: ""; width: 15px; height: 15px; border-radius: 50%;
+  background: conic-gradient(var(--purple) var(--used, 0%), #c5c3cc 0);
+  mask: radial-gradient(circle, transparent 46%, black 51%);
+}
+#contextUsage {
+  display: none; position: absolute; bottom: 100%; right: -45px; z-index: 5;
+  width: max-content; max-width: 190px; padding: 8px 12px; border-radius: 8px;
+  background: #292830; color: white; box-shadow: 0 3px 14px #302a3b24;
+  text-align: center; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.contextMeter:is(:hover, :focus-within):not([data-dismissed]) #contextUsage { display: grid; gap: 2px; }
+
 #question {
   height: var(--question-height, 70px);
   overflow: auto;

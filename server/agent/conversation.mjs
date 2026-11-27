@@ -1,4 +1,5 @@
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { CompactionEntry } from "@earendil-works/pi-durable";
 import { fault } from "../storage.mjs";
 export async function conversationFor(h, session, rewind) {
   const ownership = { ownership: { kind: "ownerless" } };
@@ -50,10 +51,17 @@ export async function conversationFor(h, session, rewind) {
       return recovered;
     }
   }
-  if (
-    rewind === undefined &&
-    (await root.entries({}, 1, undefined, ctx)).items[0]?.id === checkpoint
-  )
-    return root;
+  if (rewind === undefined) {
+    // A background summary can land after the visible answer. Continue from
+    // that head unless a different turn has since been written.
+    let cursor;
+    do {
+      const page = await root.entries({ minEntryId: checkpoint }, 8, cursor, ctx);
+      const latest = page.items.find(entry => !CompactionEntry.is(entry));
+      if (latest?.id === checkpoint) return root;
+      if (latest) break;
+      cursor = page.next;
+    } while (cursor !== undefined);
+  }
   return root.fork(checkpoint, ownership, ctx);
 }

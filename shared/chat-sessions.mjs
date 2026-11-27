@@ -1,3 +1,7 @@
+export const DEFAULT_CONTEXT_WINDOW = 200_000;
+export const MIN_CONTEXT_WINDOW = 32_000;
+export const isContextWindow = value => Number.isSafeInteger(value) && value >= MIN_CONTEXT_WINDOW;
+
 // A user turn establishes its file context. Only mutations in its answer link outputs.
 export function relatedFiles(session) {
   if (session.deferred) return session.fileIds;

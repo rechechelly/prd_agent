@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
-import { createSession } from "@earendil-works/pi-durable";
+import { createModels } from "@earendil-works/pi-ai";
+import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
+import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { fault } from "../storage.mjs";
 import { removeTranscript } from "./queue.mjs";
 import { agentHistory, transcriptPath, sessionStore } from "./history.mjs";
+import { DEFAULT_CONTEXT_WINDOW } from "../../shared/chat-sessions.mjs";
 
 // The queue and active submission are session-scoped Pi documents. Give a branch
 // its own store and import only the visible transcript prefix, including compaction boundaries.
@@ -26,6 +29,7 @@ export async function forkSession(source, index, role, userEntry, currentFile) {
   if (!Number.isSafeInteger(index) || !source.messages[index] || !["user","assistant"].includes(role))
     fault("请选择要分支的用户消息或助手回复");
   const branch = { id: randomUUID(), sourceId: source.sourceId, updatedAt: Date.now(),
+    contextWindow: source.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     name: (source.name || source.messages[0].q).slice(0, 65) + " · 分支",
     messages: structuredClone(source.messages.slice(0, index + 1)) };
   const last = branch.messages.at(-1);
@@ -53,7 +57,9 @@ export async function forkSession(source, index, role, userEntry, currentFile) {
   try {
     const entry = (await src.entry(cutoff, ctx))?.entry;
     if (entry?.kind !== "pi." + role) fault("分支节点不存在", 409);
-    const dst = createSession(await openNodeSqliteStorage(transcriptPath(branch.sourceId, branch.id)));
+    const dst = await Harness.open(await openNodeSqliteStorage(sessionStore(branch)), {
+      registry: createRegistry(), models: createModels(),
+    }, ctx);
     const ids = new Map();
     try {
       branch.conversationId = await dst.commit(async tx => {
@@ -72,6 +78,8 @@ export async function forkSession(source, index, role, userEntry, currentFile) {
         } while (cursor !== undefined);
         return conversation.id;
       }, ctx);
+      const conversation = await dst.conversation(branch.conversationId, ctx);
+      branch.messages[index].contextTokens = estimateContextTokens(await conversation.context(ctx)).tokens;
     } finally { await dst.close(ctx); }
     for (const m of branch.messages) {
       m.userEntry = ids.get(m.userEntry);

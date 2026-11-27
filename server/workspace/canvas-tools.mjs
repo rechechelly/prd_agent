@@ -1,10 +1,10 @@
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
-import { defineTextTool } from "../agent/text-tool.mjs";
+import { onlineBatchTool } from "./batch-tool.mjs";
 import { arr, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { validateDrawing } from "../../shared/canvas-model.mjs";
 import { boardType } from "../../shared/workspace-files.mjs";
 export function drawCanvasTool(workspace) {
-  return defineTextTool({
+  return onlineBatchTool(workspace, {
     name: "draw_online_canvas",
     description: toolDescriptions.draw_online_canvas,
     parameters: obj({
@@ -51,8 +51,8 @@ export function drawCanvasTool(workspace) {
         }),
       ),
     }),
-    async execute(args) {
-      const doc = workspace.target(args.id, args.path);
+    execute(draft, args) {
+      const doc = draft.target(args.id, args.path);
       if (!boardType(doc.type))
         throw Error(
           "目标不是画布。用 list_online_files 找到目标画布，或用 write_online_file 创建 canvas，再传入其 id 或 path。",
@@ -89,7 +89,7 @@ export function drawCanvasTool(workspace) {
             ? validateDrawing(all, scene)
             : undefined;
       }
-      workspace.saveDrawing(doc, patch);
+      draft.saveDrawing(doc, patch);
       const summary = patch
         ? `本轮已记录 ${patch.elements.length} 个新增或更新图元，删除 ${patch.remove.length} 个。完成后用户可预览和采用。`
         : "本轮修改已撤回。";

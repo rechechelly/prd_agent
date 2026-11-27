@@ -1,7 +1,8 @@
 import { createModels, createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { fault } from "../storage.mjs";
-export function runtimeModels(p) {
+import { DEFAULT_CONTEXT_WINDOW } from "../../shared/chat-sessions.mjs";
+export function runtimeModels(p, contextWindow = DEFAULT_CONTEXT_WINDOW) {
   const deepseek = new URL(p.base).hostname === "api.deepseek.com";
   const maxTokens = Number(process.env.XUYE_MAX_OUTPUT_TOKENS ?? 32768);
   if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens >= 128000)
@@ -17,7 +18,7 @@ export function runtimeModels(p) {
       ...(deepseek && { compat: { thinkingFormat: "deepseek" } }),
       input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000,
+      contextWindow,
       maxTokens,
     };
   models.setProvider(

@@ -1,5 +1,47 @@
-import { $, icon, confirmDelete } from "../shared";
+import { $, icon, confirmDelete, dialog } from "../shared";
+import { changed, online } from "../service";
+import { DEFAULT_CONTEXT_WINDOW, MIN_CONTEXT_WINDOW, isContextWindow } from "../../shared/chat-sessions.mjs";
 import { sessionName } from "./chat-sessions";
+
+export function installContextWindow(readContext) {
+  const meter = $("agentContextMeter"), button = $("agentContextWindow"), tip = $("contextUsage");
+  const format = new Intl.NumberFormat("zh-CN");
+  const limitFor = session => isContextWindow(session.contextWindow) ? session.contextWindow : DEFAULT_CONTEXT_WINDOW;
+  function render() {
+    const { session, used } = readContext();
+    meter.hidden = !online || !session;
+    if (meter.hidden) return;
+    const limit = limitFor(session);
+    const percent = used == null ? null : Math.round(used / limit * 100);
+    button.style.setProperty("--used", Math.min(100, percent ?? 0) + "%");
+    tip.firstElementChild.textContent = percent == null ? "上下文用量待统计" : "上下文窗口 · 已用 " + percent + "%";
+    tip.lastElementChild.textContent = (used == null ? "总计 " : format.format(used) + " / ") + format.format(limit) + " 标记";
+  }
+  meter.onpointerenter = button.onfocus = () => { delete meter.dataset.dismissed; };
+  button.onkeydown = e => { if (e.key === "Escape") meter.dataset.dismissed = ""; };
+  button.onclick = () => {
+    const { session } = readContext();
+    const limit = limitFor(session);
+    dialog("会话上下文窗口",
+      `<label for="windowLimit">窗口大小（标记）</label><input id="windowLimit" name="limit" type="number" min="${MIN_CONTEXT_WINDOW}" step="1" value="${limit}" required aria-describedby="windowHint">
+      <p id="windowHint">最少 ${format.format(MIN_CONTEXT_WINDOW)} 个标记。同一会话中的所有模型共用此设置，从下次发送消息起生效。</p>`,
+      data => {
+        const value = Number(data.limit);
+        if (!isContextWindow(value)) {
+          const input = $("windowLimit");
+          input.setCustomValidity("请输入可以精确表示的正整数");
+          input.reportValidity();
+          return false;
+        }
+        session.contextWindow = value;
+        changed();
+        render();
+      }, "保存");
+    $("windowLimit").oninput = e => e.target.setCustomValidity("");
+    $("windowLimit").select();
+  };
+  return render;
+}
 
 export function editableTab(button, session, rename) {
   const edit = () => {

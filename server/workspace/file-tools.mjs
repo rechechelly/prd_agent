@@ -1,7 +1,8 @@
-import { obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
+import { arr, obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
 import { onlineFileTypes } from "../../shared/workspace-files.mjs";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { defineTextTool } from "../agent/text-tool.mjs";
+import { onlineBatchTool } from "./batch-tool.mjs";
 
 const selector = {
   id: opt(str({ description: "在线文件 ID，与 path 二选一" })),
@@ -10,7 +11,7 @@ const selector = {
 
 export function onlineFileTools(workspace) {
   return [
-    defineTextTool({
+    onlineBatchTool(workspace, {
       name: "write_online_file",
       description: toolDescriptions.write_online_file,
       parameters: obj({
@@ -28,14 +29,15 @@ export function onlineFileTools(workspace) {
           }),
         ),
       }),
-      execute: workspace.create,
+      execute: (target, args) => target.create(args),
     }),
-    defineTextTool({
+    onlineBatchTool(workspace, {
       name: "read_online_file",
-      replay: "safe",
+      readOnly: true,
       description: toolDescriptions.read_online_file,
       parameters: obj({ ...selector, version: opt(int()), file: opt(oneOf(["prd", "html"])), offset: opt(int()), limit: opt(int()) }),
-      execute: workspace.read,
+      maxResultBytes: 256 * 1024,
+      execute: (target, args, count) => target.read(args, Math.floor(40000 / count)),
     }),
     defineTextTool({
       name: "edit_online_file",
@@ -47,6 +49,7 @@ export function onlineFileTools(workspace) {
         content: opt(str()),
         append: opt(bool({ description: "向文档末尾追加，保留已有正文。" })),
         old_text: opt(str()),
+        list: opt(arr(obj({ old_text: str({ minLength: 1 }), new_text: str() }), { minItems: 1 })),
       }),
       execute: workspace.edit,
     }),

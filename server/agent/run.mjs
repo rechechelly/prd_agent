@@ -4,7 +4,7 @@ import { maskImages, prepareReferences } from "./context.mjs";
 import { conversationFor } from "./conversation.mjs";
 import { createAgentTools } from "./tools.mjs";
 import { runtimeModels } from "./model.mjs";
-import { loopPolicy, CompactionBoundary } from "./policy.mjs";
+import { loopPolicy, CompactionBoundary, compactionSettings } from "./policy.mjs";
 import {
   agentInstructions,
   agentInput,
@@ -28,6 +28,7 @@ import {
 } from "../runtime/task-environment.mjs";
 import { openTaskNetwork } from "../runtime/task-network.mjs";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import { calculateContextTokens, estimateContextTokens, estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import { obj, str, opt } from "@earendil-works/pi-schema";
 import {
   AssistantEntry,
@@ -190,7 +191,7 @@ export async function runAgent(
     );
     if (saved) await writeSnapshot("current.html", files["current.html"]);
     network = await openTaskNetwork(stage, req.externalApi);
-    const { models, deepseek } = runtimeModels(p);
+    const { models, deepseek } = runtimeModels(p, session.contextWindow);
     const toolCalls = continuing
       ? agentHistory(storeDoc, storeChat).turns.findLast(t => t.requestId === requestId)?.toolCalls.filter(c => c.status !== "running") || saved.toolCalls || []
       : [];
@@ -199,14 +200,15 @@ export async function runAgent(
     async function writeCurrent(value) {
       const count = images.length;
       if (scope) scope.read(value);
-      const masked = maskImages(value, images).html;
-      for (let i = count; i < images.length; i++)
+      const masked = maskImages(value, [...images]);
+      for (let i = count; i < masked.images.length; i++)
         await writeSnapshot(
           "xuye-asset-" + (i + 1),
-          Buffer.from(images[i].split(",")[1], "base64"),
+          Buffer.from(masked.images[i].split(",")[1], "base64"),
         );
-      await writeSnapshot("current.html", masked);
-      files["current.html"] = masked;
+      await writeSnapshot("current.html", masked.html);
+      for (let i = count; i < masked.images.length; i++) images.push(masked.images[i]);
+      files["current.html"] = masked.html;
     }
     const workspace = onlineWorkspace(
       docs,
@@ -221,13 +223,10 @@ export async function runAgent(
         },
         write: writeCurrent,
       },
+      saved,
     );
     const hasFiles = () =>
       workspace.entries.length > 0 || workspace.changes.length > 0;
-    if (saved) {
-      workspace.entries.push(...saved.entries);
-      workspace.changes.push(...saved.changes);
-    }
     const answerFragments = continuing ? saved.fragments : [];
     const work = workspaceCheckpoints(stage, {
       question: req.question, refs: req.refs || [], earlierRefs, editIndex: req.editIndex,
@@ -268,6 +267,7 @@ export async function runAgent(
     });
     const registry = createRegistry();
     const rounds = new Set();
+    let requestTokens = 0;
     let compactions = 0,
       correctionCount = 0;
     const explicitCreation =
@@ -317,6 +317,15 @@ export async function runAgent(
           },
         }),
         hook(GenerationTask, {
+          beforeRequest({ messages }) {
+            requestTokens = estimateContextTokens(messages).tokens;
+            progress?.({ label: "正在等待模型响应", contextTokens: requestTokens });
+          },
+          afterResponse(message) {
+            if (message.stopReason === "error" || message.stopReason === "aborted") return;
+            const contextTokens = calculateContextTokens(message.usage) || requestTokens + estimateMessageTokens(message);
+            progress?.({ label: "已收到模型响应", contextTokens });
+          },
           afterTools(assistant) {
             rounds.add(assistant);
             if (compactRequest !== undefined)
@@ -358,6 +367,7 @@ export async function runAgent(
     }
     const config = {
       model: { provider: "workspace", modelId: p.model },
+      compaction: compactionSettings(session.contextWindow),
       ...(deepseek && { thinkingLevel: "off" }),
       extensions: [ext],
       tools: taskTools,
@@ -715,6 +725,7 @@ export async function runAgent(
       }),
       conversationId: root.id,
       answerEntry: settled.answer,
+      contextTokens: estimateContextTokens(await root.context(ctx)).tokens,
       compactions,
       skillsUsed: [...skillSet.active],
       ...(drawing.patch && {

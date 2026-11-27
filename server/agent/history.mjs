@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { directory, fault } from "../storage.mjs";
 import { generatedId } from "../../shared/workspace-files.mjs";
+import { calculateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 
 // Historically a generated PRD kept its conversations under the delivery version.
 // Only that original workspace file owns the old store. A copy has its own file ID.
@@ -156,6 +157,9 @@ export function agentHistory(docId, sessionId, tool) {
     const rows =
       db.prepare(`SELECT id, conversation_id AS conv, json_extract(record,'$.kind') AS kind,
       json_extract(record,'$.model[0].timestamp') AS stamp,
+      CASE WHEN json_extract(record,'$.kind')='pi.assistant'
+        AND json_extract(record,'$.model[0].stopReason') NOT IN ('error','aborted','deferred')
+        THEN json_extract(record,'$.model[0].usage') END AS usage,
       CASE WHEN json_extract(record,'$.kind')='pi.user' THEN json_extract(record,'$.model[0].content[0].text') END AS prompt,
       CASE WHEN json_extract(record,'$.kind')='pi.assistant' THEN
         (SELECT json_group_array(json_object('idx',j.key,'id',json_extract(j.value,'$.id'),'name',json_extract(j.value,'$.name')))
@@ -184,6 +188,8 @@ export function agentHistory(docId, sessionId, tool) {
       if (!turn) continue;
       if (r.kind === "pi.assistant") {
         turn.lastAssistant = r.id;
+        const tokens = r.usage && calculateContextTokens(JSON.parse(r.usage));
+        if (tokens > 0) turn.contextTokens = tokens;
         for (const t of JSON.parse(r.tools || "[]")) {
           const call = {
             name: t.name,

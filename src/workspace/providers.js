@@ -36,26 +36,17 @@ function installPicker(onCompletionChange) {
     options = picker.querySelector(".modelOptions");
   let scope, trigger;
   function place() {
+    if (!picker.matches(":popover-open")) return;
+    if (!trigger.getClientRects().length) return picker.hidePopover();
     const anchor = trigger.getBoundingClientRect();
-    const above =
-      innerHeight - anchor.bottom < picker.offsetHeight &&
-      anchor.top > innerHeight - anchor.bottom;
-    picker.style.left =
-      Math.max(
-        6,
-        Math.min(
-          innerWidth - picker.offsetWidth - 6,
-          anchor.right - picker.offsetWidth,
-        ),
-      ) + "px";
-    picker.style.top =
-      Math.max(
-        6,
-        Math.min(
-          innerHeight - picker.offsetHeight - 6,
-          above ? anchor.top - picker.offsetHeight - 4 : anchor.bottom + 4,
-        ),
-      ) + "px";
+    const below = innerHeight - anchor.bottom;
+    const height = picker.offsetHeight;
+    const above = scope === "agent"
+      ? anchor.top >= height + 10 || anchor.top >= below
+      : below < height + 10 && anchor.top > below;
+    const left = scope === "agent" ? anchor.left : anchor.right - picker.offsetWidth;
+    picker.style.left = Math.max(6, Math.min(left, innerWidth - picker.offsetWidth - 6)) + "px";
+    picker.style.top = Math.max(6, Math.min(above ? anchor.top - height - 4 : anchor.bottom + 4, innerHeight - height - 6)) + "px";
   }
   function filter() {
     options.replaceChildren();
@@ -145,9 +136,11 @@ function installPicker(onCompletionChange) {
       search.focus();
     };
   }
-  window.addEventListener("resize", () => {
-    if (picker.matches(":popover-open")) place();
-  });
+  const resize = new ResizeObserver(place);
+  resize.observe($("agent"));
+  resize.observe($("askForm"));
+  resize.observe(picker);
+  window.addEventListener("resize", place);
 }
 
 export function initModels(onCompletionChange) {

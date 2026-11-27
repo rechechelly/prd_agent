@@ -28,9 +28,25 @@ function relativeNames(path) {
 }
 
 // Paths resolve against workspace nodes only. An unsuccessful call adds no ancestors.
-export function onlineWorkspace(nodes, currentId, current) {
-  const entries = [],
-    changes = [];
+export function onlineWorkspace(nodes, currentId, current, { entries = [], changes = [] } = {}) {
+  // A batch sees its own earlier writes. Publish its draft only after every item succeeds.
+  async function transaction(apply) {
+    const pending = {};
+    const draft = onlineWorkspace(nodes, currentId, current && {
+      read: () => ({ ...current.read(), ...pending }),
+      write: html => { pending.html = html; },
+      ...(current.writeDrawing && { writeDrawing: drawing => { pending.drawing = drawing; } }),
+    }, {
+      entries: entries.map(entry => ({ ...entry })),
+      changes: changes.map(change => ({ ...change, base: { ...change.base } })),
+    });
+    const result = await apply(draft);
+    if (Object.hasOwn(pending, "html")) await current.write(pending.html);
+    if (Object.hasOwn(pending, "drawing")) current.writeDrawing(pending.drawing);
+    entries = draft.entries;
+    changes = draft.changes;
+    return result;
+  }
   function effective() {
     return [...nodes, ...entries].map((n) => ({
       ...n,
@@ -95,7 +111,7 @@ export function onlineWorkspace(nodes, currentId, current) {
     else recordUpdate(node, { drawing: patch });
   }
 
-  function read({ id, path, version, file, offset = 0, limit = 16000 }) {
+  function read({ id, path, version, file, offset = 0, limit = 16000 }, maxChars = 40000) {
     let n;
     if (version !== undefined || file !== undefined) {
       if (!id || path !== undefined || !Number.isSafeInteger(version) || !file)
@@ -104,6 +120,7 @@ export function onlineWorkspace(nodes, currentId, current) {
       if (!revision) throw Error("找不到此版本的交付文件");
       n = { ...revision, id, html: revision.content };
     } else n = target(id, path);
+    if (maxChars < 1) throw Error("读取项目太多，请分批读取");
     if (offset < 0 || limit < 1)
       throw Error("offset 需非负，limit 需为正数");
     let body = n.html || "";
@@ -113,13 +130,15 @@ export function onlineWorkspace(nodes, currentId, current) {
     } else if (boardType(n.type)) {
       body = JSON.stringify({ elements: describeCanvas(n.scene), pending: n.drawing });
     }
+    const end = offset + Math.min(limit, maxChars);
     return {
       id: n.id,
       title: n.title,
       type: n.type,
       parent: n.parent || "",
       length: body.length,
-      content: body.slice(offset, offset + Math.min(limit, 40000)),
+      content: body.slice(offset, end),
+      next_offset: end < body.length ? end : null,
     };
   }
 
@@ -232,11 +251,14 @@ export function onlineWorkspace(nodes, currentId, current) {
     };
   }
 
-  async function edit({ id, path, title, parent_id, content, source, append, old_text, drawing }) {
+  async function edit({ id, path, title, parent_id, content, source, append, old_text, drawing, list }) {
     const n = target(id, path),
       all = effective();
     const update = {};
     if (source !== undefined) throw Error("请用 content 提交正文。任务文件可先用 read 读取");
+    if (list !== undefined && (!Array.isArray(list) || !list.length ||
+      content !== undefined || old_text !== undefined || append !== undefined))
+      throw Error("list 需要至少一项替换，且不能与 content、old_text 或 append 混用");
     if (
       append &&
       ((n.type !== "文档" && !["需求文档", "备忘录"].includes(n.type)) ||
@@ -272,13 +294,21 @@ export function onlineWorkspace(nodes, currentId, current) {
     if (
       content !== undefined ||
       drawing !== undefined ||
-      old_text !== undefined
+      old_text !== undefined ||
+      list !== undefined
     ) {
       if (boardType(n.type) || drawing !== undefined)
         throw Error("编辑画布图元请使用 draw_online_canvas");
-      if (n.type === "文件夹" || content === undefined)
+      if (n.type === "文件夹" || (content === undefined && list === undefined))
         throw Error("该类型不支持此正文操作");
-      update.html = editOnlineFileBody(n.id, n.html || "", { content, oldText: old_text, append });
+      const edits = list
+        ? list.map((item, index) => {
+            if (typeof item?.old_text !== "string" || typeof item.new_text !== "string")
+              throw Error(`第 ${index + 1} 项需要 old_text 和 new_text 字符串`);
+            return { oldText: item.old_text, content: item.new_text };
+          })
+        : [{ content, oldText: old_text, append }];
+      update.html = editOnlineFileBody(n.id, n.html || "", edits);
       checkOnlineFileSize(update.html);
     }
     if (!Object.keys(update).length) throw Error("请提供要修改的内容");
@@ -287,8 +317,12 @@ export function onlineWorkspace(nodes, currentId, current) {
       delete update.html;
     }
     if (Object.keys(update).length) recordUpdate(n, update);
-    return "已登记修改 " + n.id;
+    return "已登记修改 " + n.id + (list ? `（${list.length} 处）` : "");
   }
 
-  return { entries, changes, target, saveDrawing, read, list, create, edit };
+  return {
+    get entries() { return entries; },
+    get changes() { return changes; },
+    target, saveDrawing, read, list, create, edit, transaction,
+  };
 }

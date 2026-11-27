@@ -44,6 +44,7 @@ npm start
 - **Agent 对话**默认携带当前文件上下文。“给这个页面加字段”“继续写这一节”等请求优先在当前文件上提出修改。需要独立交付时，可以明确要求创建新的 PRD、HTML 或画布。对话可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
 - **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击选区旁的「问 Agent」，或将选区拖入助手，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
 - **会话**关联发起文件和每轮新建、编辑的文件。从产物打开助手会看到最近使用的关联会话。双击标签可重命名。在历史按钮下方可以选择会话或从所有关联文件中删除它。点击提问或回复旁的分支按钮，可继承截至该条消息的上下文和文件关联。每个分支拥有独立队列和后续执行记录。输入或粘贴 Markdown 后，标题、列表和代码块直接在输入框中排版，可以继续编辑。按 Shift+Enter 换行，按 Enter 发送。拖动输入框上边缘可调整高度。
+- **上下文窗口**按会话保存。将鼠标移到模型名称右侧的圆环，或用键盘聚焦它，可以查看已用标记数和总量。点击圆环可调整大小，下次发送消息时生效。切换模型沿用当前会话的设置，新分支继承创建时的窗口大小。
 - **文件地址**采用 `/{账号}/{文件 UUID}`。账号首页默认打开目录中的首份文档，目录切换、刷新、前进和后退都使用文件地址。启动时仅传目录与会话索引，正文、画布和对应会话在打开文件时读取。
 - **分享**使用相同的文件地址。所有者登录后编辑，访客在开启分享时可查看内容并评论。私有文件引导访客登录。旧版已发出的分享链接继续使用原来的开关。分享通过「分享」中的开关控制。关闭立即撤销链接访问，重新开启可继续使用原链接。
 - **技能**在「工作区设置 → Agent 工具与技能」管理。仓库附带可替换的 `prd-writing` 技能，指导 Agent 交付可交互 HTML 和图文 PRD。用户可导入其他技能包。
@@ -78,7 +79,7 @@ npm start
 | --- | --- | --- |
 | Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
 | 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。连续 2 次续写都没有推进文件修改时停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
-| Agent 模型预算 | 模型适配层声明 128,000 token 上下文窗口；`XUYE_MAX_OUTPUT_TOKENS` 默认为 32,768，可设置为 1–127,999。部署时按实际模型支持的上限配置 | `server/agent/model.mjs` |
+| Agent 模型预算 | 会话上下文默认 200,000 token，最低 32,000。接近窗口上限时，Pi 会压缩可归纳的旧消息。`XUYE_MAX_OUTPUT_TOKENS` 是单次输出预算，默认 32,768，可设置为 1–127,999，实际请求还受剩余上下文约束 | `shared/chat-sessions.mjs`、`server/agent/model.mjs`、`server/agent/policy.mjs` |
 | 文档及源码补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token。自动补全遇到空建议时结束；主动补全首次无建议或编辑格式、定位有误时最多再请求一次 | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
 | 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
 | 对话输入框 | 可拖动上边缘，也可聚焦边缘后按上下键，每次调整 16 px。默认高度 70 px，下限 62 px，上限取 540 px 和窗口高度 52% 中的较小值。偏好保存在浏览器的 `xuye.composerHeight` | `src/chat/composer.js` |
@@ -92,7 +93,28 @@ npm start
 | 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 编写技能与脚本，用 Bash 运行脚本或解析二进制原件。 |
 | 工作台技能与会话 | `skill_load`、`compact_context` | 前者按名称加载技能入口。后者是工作台为模型提供的操作，调用 Pi 的 `Conversation.compact`。Pi 自带的阈值压缩和上下文溢出恢复也会自动运行。 |
 
-工作区使用数据库保存文件树。在线工具只在这棵树里解析名称和 ID。比如 `read_online_file({path:"需求/说明"})` 读取在线文档，`read({path:"upload-….txt"})` 读取本次任务的附件。直接修改在线正文可用 `edit_online_file({id:"A",old_text:"原句",content:"新句"})`。长文可用同一工具的 `append` 参数分段追加，并用 `read_online_file` 核对结果。
+工作区使用数据库保存文件树。比如 `read_online_file({path:"需求/说明"})` 读取在线文档，`read({path:"upload-….txt"})` 读取本次任务的附件。
+
+同一文件有多处要改时，`edit_online_file` 可以一次提交以下参数。每个 `old_text` 都在调用开始时的同一份原文中定位。任一项找不到、匹配多次或与另一项重叠，整批都不会写入。
+
+```json
+{
+  "id": "目标文件ID",
+  "list": [
+    { "old_text": ".drawer { width: 400px; }", "new_text": ".drawer { width: 520px; }" },
+    { "old_text": "<h2>还款信息</h2>", "new_text": "<h2>订单确认</h2>" }
+  ]
+}
+```
+
+原有的 `{id, old_text, content}` 单处替换、全文更新及文档追加仍可用。Pi Durable 1.6.0 的原生文件工具也有同文件批量编辑接口 `edit({path, edits:[{oldText,newText}]})`，其原生 `read`、`write` 每次接收一个路径。
+
+| 工具 | 一次调用可以完成的操作 |
+| --- | --- |
+| `read_online_file` | 用 `list` 读取多个文件或同一文件的多个区段。各项可指定 `offset`、`limit`，用返回的 `next_offset` 续读 |
+| `write_online_file` | 用 `list` 创建多份文件，每项提供 `path`、`type` 和可选正文。返回顺序与输入一致 |
+| `draw_online_canvas` | 用 `elements` 和 `remove` 一次提交同一画布的节点、连线和删除。涉及多个画布时，按目标组成 `list` |
+| `embed_view_screenshots` | 每对文档与原型一次处理全部截图标记。多组文件使用 `list:[{document_id,html_id},…]` |
 
 从 v1.0.x 升级到 v2.0.0 时，如果自定义技能使用旧工具名，请将 `read_file`、`write_file`、`edit_file`、`list_file`、`draw_canvas` 分别改为 `read_online_file`、`write_online_file`、`edit_online_file`、`list_online_files`、`draw_online_canvas`。已有会话的执行记录保留当时的工具名。
 

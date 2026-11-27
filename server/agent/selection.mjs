@@ -37,9 +37,9 @@ export function selectionScope(refs, ownerId, doc) {
         else if (JSON.stringify(tags) !== JSON.stringify(after))
           throw Error("请保留选区片段中的全部 HTML 标签和顺序，仅修改文字。");
       }
-      return editOnlineFileBody(ownerId, html, {
+      return editOnlineFileBody(ownerId, html, [{
         range: { fileId: id, from: prefix.html.length, to: html.length - suffix.length }, content: replacement,
-      });
+      }]);
     },
   };
 }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { db, fault, transaction } from "../storage.mjs";
 import { migrateDirectory } from "../../shared/migrate-directory.mjs";
 import { migrateExternalReviews } from "./migrate-reviews.mjs";
-import { relatedFiles } from "../../shared/chat-sessions.mjs";
+import { DEFAULT_CONTEXT_WINDOW, isContextWindow, relatedFiles } from "../../shared/chat-sessions.mjs";
 import { forkSession } from "../agent/branches.mjs";
 import { removeTranscript } from "../agent/queue.mjs";
 import { chatStorageId, sessionStore } from "../agent/history.mjs";
@@ -88,7 +88,9 @@ export function expandWorkspace(input, previous) {
     const prior = oldChats.get(s.id);
     if (!Array.isArray(s.messages) || typeof s.sourceId !== "string" ||
         prior && prior.sourceId !== s.sourceId) fault("会话数据无效");
-    return { ...s, storeDoc: prior?.storeDoc, storeChat: prior?.storeChat };
+    const contextWindow = s.contextWindow === undefined ? prior?.contextWindow ?? DEFAULT_CONTEXT_WINDOW : s.contextWindow;
+    if (!isContextWindow(contextWindow)) fault("会话上下文窗口必须是至少 32,000 的正整数");
+    return { ...s, contextWindow, storeDoc: prior?.storeDoc, storeChat: prior?.storeChat };
   });
   return { completionEnabled: input.completionEnabled, docs: input.docs.map(expand), folders: input.folders.map(expand), chats };
 }
