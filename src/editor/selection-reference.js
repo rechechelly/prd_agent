@@ -62,21 +62,6 @@ export function documentRange(editor, source, selection) {
   return { start, end, text: doc.textBetween(first.from, last.to, "\n") };
 }
 
-export function rawRange(input, source) {
-  const { selectionStart, selectionEnd } = input;
-  if (selectionStart === selectionEnd) throw Error("请选择 HTML 源码");
-  // Textareas normalize CRLF. File offsets always refer to the stored UTF-16 string.
-  const offset = (index) => {
-    let raw = index;
-    for (const match of source.matchAll(/\r\n/g)) {
-      if (match.index >= raw) break;
-      raw++;
-    }
-    return raw;
-  };
-  return { start: offset(selectionStart), end: offset(selectionEnd), text: input.value.slice(selectionStart, selectionEnd) };
-}
-
 export async function rangeReference(file, range, source) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
   return { kind: "range", id: file.id, title: file.title, ...range,

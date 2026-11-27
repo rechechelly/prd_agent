@@ -2,11 +2,13 @@ import { migrateDirectory } from "../shared/migrate-directory.mjs";
 import { applyDelivery } from "./workspace/deliveries";
 import { shareFile, publicBoard } from "./review/file-sharing";
 import { initModels, setModels, selectedModel } from "./workspace/providers";
-import { documentCompletion } from "./editor/document-completion";
+import { editorCompletion } from "./editor/inline-completion";
 import { queueState, syncQueue, renderQueue } from "./chat/chat-queue";
 import { readTurns, findTurn, tracePanel } from "./chat/chat-trace";
 import { boardType, onlineFileTypes } from "../shared/workspace-files.mjs";
-import { emptyHtml, sourceEdits, installHtmlSource } from "./workspace/html-source";
+import { markdownInsertion } from "./editor/completion-range";
+import { installSourceEditor } from "./workspace/source-editor";
+import { emptyHtml, sourceEdits } from "./workspace/html-source";
 import { createDocumentEditor } from "./editor/document-editor";
 import { sceneVersion } from "../shared/canvas-model.mjs";
 import { targetsFile } from "../shared/chat-sessions.mjs";
@@ -16,7 +18,7 @@ import { chats, sessions, newSession, latestSession, chooseSession, selectedSess
 import { installComposer } from "./chat/composer";
 import { renderChatMarkdown } from "./chat/markdown";
 import { installReferenceInput } from "./chat/reference-input";
-import { documentRange, rawRange, rangeReference } from "./editor/selection-reference";
+import { documentRange, rangeReference } from "./editor/selection-reference";
 import { installWorkspaceSettings } from "./workspace/settings";
 import { exampleWorkspace } from "./workspace/example";
 import { planEdits, wireEdits } from "./editor/edit-comparison";
@@ -98,8 +100,9 @@ async function quoteSelection(selection, rawSelection) {
   const file = doc, session = composerSession, source = file.html;
   try {
     const range = file.type === "交互 HTML"
-      ? rawRange(rawSelection || $("htmlInput"), source)
+      ? rawSelection || sourceEditor.selection()
       : documentRange(editor, source, selection);
+    if (!range) return;
     const ref = await rangeReference(file, range, source);
     if (session !== composerSession || file !== doc || source !== file.html) return;
     const index = quoted.findIndex(item => item.kind === "range");
@@ -200,16 +203,13 @@ function renderQuotes() {
   });
 }
 const editPlans = new WeakMap();
-let visibleProposal, writeSource;
+let visibleProposal, sourceEditor;
 let rawMode = false;
 function setHtmlMode(raw) {
+  hideSuggestion();
   rawMode = raw;
   if (raw) previewOriginal = false;
   reviewDraft();
-}
-function refreshSourceQuote() {
-  const input = $("htmlInput");
-  $("quoteSource").hidden = $("htmlSourceEditor").hidden || input.selectionStart === input.selectionEnd;
 }
 function updateHtmlView(sourceDiff, renderSource = doc.html) {
   $("renderMode").setAttribute("aria-pressed", String(!rawMode));
@@ -227,8 +227,8 @@ function updateHtmlView(sourceDiff, renderSource = doc.html) {
   $("htmlSourceEditor").hidden = !rawMode || sourceDiff;
   $("htmlDiff").hidden = !rawMode || !sourceDiff;
 
-  if (rawMode && !sourceDiff) writeSource(doc.html);
-  refreshSourceQuote();
+  if (rawMode && !sourceDiff) sourceEditor.set(doc.html);
+  mountCompletionControls($("resultRail"), rawMode && !sourceDiff);
 }
 function reviewDraft(focusIndex) {
   const target = doc;
@@ -247,6 +247,7 @@ function reviewDraft(focusIndex) {
     (pending.reviewCurrent ?? pending.base) !== target.html;
   if (visibleProposal !== pending) previewOriginal = false;
   const inline = !!pending && !stale && !previewOriginal;
+  if (inline) hideSuggestion();
   if (!isHtml) {
     preview.hidden = !inline;
     $("editor").hidden = inline;
@@ -495,10 +496,7 @@ function header() {
       : $(page).querySelector(".pagehead") || $(page);
   if ($("assistantToggle").parentNode !== mount)
     mount.append($("assistantToggle"));
-  const completionButton = $("completionToggle");
-  completionButton.hidden = !isDoc;
-  if (!completionButton.hidden && completionButton.parentNode !== mount)
-    mount.insertBefore(completionButton, $("assistantToggle"));
+  mountCompletionControls(mount, isDoc || (page === "result" && doc?.type === "交互 HTML" && rawMode && !$("htmlSourceEditor").hidden));
   const comments = $("commentsToggle");
   if (doc && comments.parentNode !== mount) mount.insertBefore(comments, $("assistantToggle"));
   const share = $("share");
@@ -622,7 +620,7 @@ async function openDoc(d, replace = false) {
       if (switching) {
         rawMode = false;
         $("resultFrame").removeAttribute("srcdoc");
-        writeSource(d.html, true);
+        sourceEditor.set(d.html, true);
       }
       chat();
     } else {
@@ -729,14 +727,30 @@ function create(parent = "") {
   $("name").focus();
 }
 let completionEnabled = true;
-const completion = documentCompletion({
-  getEditor: () => editor,
-  getDocument: () => doc,
+function completionStatus(message = "", error) {
+  const button = $("completionToggle");
+  button.textContent = message || (completionEnabled ? "AI 补全 · 开" : "AI 补全 · 关");
+  button.setAttribute("aria-pressed", String(completionEnabled));
+  button.title = error || "输入后自动补全 · 单按 Tab 采纳，双按 Tab 生成或换一版，Esc 取消";
+}
+function mountCompletionControls(mount, visible) {
+  for (const id of ["completionToggle", "completionModel"]) {
+    const control = $(id);
+    control.hidden = !visible || (id === "completionModel" && !online);
+    if (visible && control.parentNode !== mount) mount.insertBefore(control, $("assistantToggle"));
+  }
+}
+const commonCompletion = { getFile: () => doc, status: completionStatus };
+const completion = editorCompletion({
+  ...commonCompletion,
   enabled: () => completionEnabled && page === "work" && doc?.type === "文档" && !$("editor").hidden,
-  popup: $("suggest"),
-  scrollport: $("paperScroll"),
+  markdown: (...args) => markdownInsertion(editor, ...args),
 });
-const hideSuggestion = completion.clear;
+const codeCompletion = editorCompletion({
+  ...commonCompletion,
+  enabled: () => completionEnabled && page === "result" && doc?.type === "交互 HTML" && rawMode && !$("htmlSourceEditor").hidden,
+});
+function hideSuggestion() { completion.clear(); codeCompletion.clear(); }
 function documentBody(html) {
   const body = new DOMParser().parseFromString(html, "text/html").body;
   body.querySelectorAll("style,script,noscript").forEach((el) => el.remove());
@@ -1488,16 +1502,10 @@ async function setup() {
   if (!online)
     completionEnabled = localStorage.getItem("xuye.completion") !== "off";
   const completionButton = $("completionToggle");
-  const updateCompletion = () => {
-    completionButton.setAttribute("aria-pressed", String(completionEnabled));
-    completionButton.textContent = completionEnabled
-      ? "AI 补全 · 开"
-      : "AI 补全 · 关";
-  };
-  updateCompletion();
+  completionStatus();
   completionButton.onclick = () => {
     completionEnabled = !completionEnabled;
-    updateCompletion();
+    completionStatus();
     hideSuggestion();
     if (!online)
       localStorage.setItem("xuye.completion", completionEnabled ? "on" : "off");
@@ -1513,24 +1521,19 @@ async function setup() {
       changed();
       reviewDraft();
       header();
-      completion.request();
     },
   });
   composer = installComposer(ask);
-  $("htmlInput").addEventListener("select", refreshSourceQuote);
-  $("htmlInput").addEventListener("selectionchange", refreshSourceQuote);
-  $("quoteSource").onmousedown = e => e.preventDefault();
-  $("quoteSource").onclick = () => quoteSelection();
-  writeSource = installHtmlSource((value) => {
-    if (doc?.type !== "交互 HTML") return;
-    doc.html = value;
-    changed();
-    if (
-      selectedSession(doc)?.messages.some(
-        (m) => typeof m.proposed === "string" && !m.resolved,
-      )
-    )
-      reviewDraft();
+  sourceEditor = installSourceEditor({
+    completion: codeCompletion,
+    quote: () => quoteSelection(),
+    onEdit(value) {
+      if (doc?.type !== "交互 HTML") return;
+      doc.html = value;
+      changed();
+      if (selectedSession(doc)?.messages.some(m => typeof m.proposed === "string" && !m.resolved))
+        reviewDraft();
+    },
   });
   $("renderMode").onclick = () => setHtmlMode(false);
   $("sourceMode").onclick = () => setHtmlMode(true);
@@ -1552,7 +1555,7 @@ async function setup() {
   $("serverLink").hidden = online;
   initModels(hideSuggestion);
   installReferenceInput({
-    editor, getFile: () => doc, quoteSelection, attachFile, uploadFiles,
+    editor, getFile: () => doc, sourceSelection: () => sourceEditor.selection(), quoteSelection, attachFile, uploadFiles,
     attachText(text) {
       quoted.push({ kind: "selection", title: "外部文本", text: text.slice(0, 12000) });
       renderQuotes();

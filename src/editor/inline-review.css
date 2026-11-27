@@ -8,3 +8,7 @@
 :is(table,ul,ol,figure,p,div)[data-inline-change]+.inline-edit-actions {display:flex!important;justify-content:flex-end;margin:2px 0 6px}
 .inline-edit-actions.end-of-edit{display:flex!important;justify-content:flex-end}
 span[data-inline-delta="remove"]+span[data-inline-delta="add"]{margin-inline-start:.25em}
+
+.completionAddition { pointer-events:none; white-space:pre-wrap; }
+.completionAddition.completionBlocks { display:block; white-space:normal; }
+#htmlInput .completionAddition { white-space:pre; }

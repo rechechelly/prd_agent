@@ -152,7 +152,6 @@ function installPicker(onCompletionChange) {
 
 export function initModels(onCompletionChange) {
   installPicker(onCompletionChange);
-  $("completionModel").hidden = !online;
   const directory = $("providerDirectory"),
     list = $("providerList");
   const form = $("modelForm"),

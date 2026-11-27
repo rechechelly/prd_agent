@@ -4,17 +4,15 @@
 #htmlChangeBar { display:flex; align-items:center; gap:8px; padding:6px 14px; background:#f1f4f8; font-size:12px; }
 #htmlChangeBar button { border:1px solid #c8cfdb; border-radius:4px; }
 #htmlSourceEditor, #htmlDiff { flex:1; min-height:0; min-width:0; }
-#htmlSourceEditor { display:flex; background:#fbfcff; }
-#htmlLineNumbers,#htmlPaint,#htmlInput,#htmlDiff {
+#htmlSourceEditor { display:flex; align-items:flex-start; overflow:auto; background:#fbfcff; position:relative; }
+#htmlLineNumbers,#htmlInput,#htmlInput pre,#htmlDiff {
   font:13px/21px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   white-space:pre; font-variant-ligatures:none; tab-size:2; margin:0; border:0; border-radius:0;
 }
-#htmlLineNumbers { text-align:right; color:#777e8f; background:#f2f4f8; padding:14px 10px 28px; overflow:hidden; user-select:none; }
-.codePane { position:relative; flex:1; min-width:0; }
-#htmlPaint,#htmlInput { position:absolute; inset:0; width:100%; height:100%; padding:14px 12px; box-sizing:border-box; }
-#htmlPaint { color:#303747; overflow:hidden; pointer-events:none; }
-#htmlInput { color:transparent; caret-color:#222; background:transparent; resize:none; outline:0; overflow:auto; }
-#htmlInput::selection { background:#5088e740; }
+#htmlLineNumbers { position:sticky; left:0; z-index:1; align-self:stretch; text-align:right; color:#777e8f; background:#f2f4f8; padding:14px 10px 28px; user-select:none; }
+#htmlInput { flex:1; min-width:max-content; min-height:100%; padding:14px 12px 28px; box-sizing:border-box; color:#303747; outline:0; }
+#htmlInput pre { padding:0; background:transparent; }
+#htmlInput ::selection { background:#5088e740; }
 .codeTag { color:#7954a7; } .codeAttr { color:#925724; } .codeString { color:#137668; } .codeComment { color:#687485; }
 #htmlDiff { overflow:auto; padding:12px 8px; background:#fafbfd; }
 .sourceLines { display:block; width:max-content; min-width:100%; }

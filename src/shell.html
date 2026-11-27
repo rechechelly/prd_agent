@@ -38,13 +38,13 @@
               <button
                 id="completionToggle"
                 type="button"
-                aria-label="AI 文档补全"
+                aria-label="AI 补全"
                 aria-pressed="true"
-                title="AI 文档补全 · Tab 采纳，快速按两次 Tab 生成或换一版"
+                title="AI 补全 · Tab 采纳，快速按两次 Tab 生成或换一版"
               >
                 AI 补全
               </button>
-              <button type="button" id="completionModel" aria-label="选择文档补全模型" aria-haspopup="dialog" hidden>补全模型</button>
+              <button type="button" id="completionModel" aria-label="选择补全模型" aria-haspopup="dialog" hidden>补全模型</button>
               <button id="commentsToggle" hidden aria-expanded="false">
                 评论
               </button>
@@ -218,7 +218,7 @@
             <button type="button" id="generationRuns" hidden>生成记录</button>
             <div id="htmlModes" role="group" aria-label="HTML 编辑模式" hidden>
               <button id="renderMode">渲染模式</button
-              ><button id="sourceMode">Raw Text</button><button id="quoteSource" hidden>问 Agent</button>
+              ><button id="sourceMode">Raw Text</button>
             </div>
           </div>
           <h2 id="resultName"></h2>
@@ -233,17 +233,7 @@
               ></iframe>
               <div id="htmlSourceEditor" hidden>
                 <pre id="htmlLineNumbers" aria-hidden="true"></pre>
-                <div class="codePane">
-                  <pre id="htmlPaint" aria-hidden="true"></pre>
-                  <textarea
-                    id="htmlInput"
-                    aria-label="HTML 源码"
-                    spellcheck="false"
-                    wrap="off"
-                    autocapitalize="off"
-                    autocomplete="off"
-                  ></textarea>
-                </div>
+                <div id="htmlInput"></div>
               </div>
               <pre id="htmlDiff" aria-label="HTML 源码修改" hidden></pre>
             </div>
@@ -319,7 +309,6 @@
       hidden
     />
     <div id="toast" role="status" hidden></div>
-    <div id="suggest" role="status" hidden></div>
     <script>
       /* APP_JS */
     </script>

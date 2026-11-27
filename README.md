@@ -27,7 +27,7 @@ npm start
 
 1. 打开**工作区设置 → 供应商管理**，列表会显示已保存的供应商、接口地址和模型数量。点击一条记录可重新编辑；点击「新增供应商」打开空白表单，填写名称、Base URL 和 API Key。Base URL 应包含供应商要求的版本前缀，例如 `https://api.example.com/v1`。远程地址使用 HTTPS，本机兼容服务也支持 loopback HTTP。
 2. 点击「获取模型列表」从该地址的 `GET /models` 发现模型，或每行手动填写一个模型 ID。可测试首个模型后保存。保存后会回到供应商列表。
-3. 在 Agent 输入框下方选择对话模型，在文档的 AI 补全开关旁选择补全模型。列表按 Base URL 分组，可按名称、模型 ID 或地址搜索。同名模型通过供应商区分。两处选择独立保存，下一次请求使用新选择。
+3. 在 Agent 输入框下方选择对话模型，在文档或 HTML 源码的 AI 补全开关旁选择补全模型。列表按 Base URL 分组，可按名称、模型 ID 或地址搜索。同名模型通过供应商区分。两处选择独立保存，下一次请求使用新选择。
 4. 修改供应商时，密钥留空可沿用同一地址的凭据。更换地址时需要重新输入密钥。删除模型后，默认选择会移到仍可用的模型。
 
 新工作区的供应商列表为空。供应商密钥用 AES-256-GCM 加密后写入工作区数据库，解密密钥在数据目录的 `master.key`。浏览器获取的是配置元数据与模型 ID。升级旧工作区时，服务按接口地址和原有凭据合并旧配置，并迁移原有模型选择。
@@ -38,11 +38,11 @@ npm start
 
 点击工作台左上角的 ☰ 可以展开或收起文件目录。目录中的 ＋ 可以新建文件夹、文档、原型画布和 HTML。手动编辑会自动保存到当前在线文件，连续输入时默认在停顿 600 毫秒后保存。Agent 对已有文件提出的修改可以先预览，点击 Keep 后写入同一文件。
 
-- **文档**支持图文、表格、行级工具栏、划词与框选格式化。有 H1–H4 标题时，文档区左上角的箭头可随时展开或收起章节目录。打开 AI 补全后，输入会触发 Markdown 续写建议。快速连按两次 Tab 可在光标处立即生成或换一版，单按 Tab 采纳，Esc 关闭。标题、列表和代码块按文档格式插入。
-- **HTML** 是单文件原型。Raw Text 编辑源码并展示 Agent 提议的差异，渲染模式预览修改效果。可以逐处保留或放弃修改。
+- **文档**支持图文、表格、行级工具栏、划词与框选格式化。有 H1–H4 标题时，文档区左上角的箭头可随时展开或收起章节目录。打开 AI 补全后，输入会触发 Markdown 续写或纠错建议。编辑器用红色标出将删除的原文、绿色标出新增内容。双按 Tab 立即生成或换一版，单按 Tab 采纳，Esc 取消。标题、列表和代码块按文档格式插入。
+- **HTML** 是单文件原型。Raw Text 提供语法高亮、划词悬浮工具栏和行内代码补全，与文档共用补全开关、模型和快捷键。Agent 提议的源码修改可在渲染模式下预览。可以逐处保留或放弃修改。
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
 - **Agent 对话**默认携带当前文件上下文。“给这个页面加字段”“继续写这一节”等请求优先在当前文件上提出修改。需要独立交付时，可以明确要求创建新的 PRD、HTML 或画布。对话可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
-- **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击「问 Agent」，或将选区拖入助手，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
+- **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击选区旁的「问 Agent」，或将选区拖入助手，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
 - **会话**关联发起文件和每轮新建、编辑的文件。从产物打开助手会看到最近使用的关联会话。双击标签可重命名。在历史按钮下方可以选择会话或从所有关联文件中删除它。点击提问或回复旁的分支按钮，可继承截至该条消息的上下文和文件关联。每个分支拥有独立队列和后续执行记录。输入或粘贴 Markdown 后，标题、列表和代码块直接在输入框中排版，可以继续编辑。按 Shift+Enter 换行，按 Enter 发送。拖动输入框上边缘可调整高度。
 - **文件地址**采用 `/{账号}/{文件 UUID}`。账号首页默认打开目录中的首份文档，目录切换、刷新、前进和后退都使用文件地址。启动时仅传目录与会话索引，正文、画布和对应会话在打开文件时读取。
 - **分享**使用相同的文件地址。所有者登录后编辑，访客在开启分享时可查看内容并评论。私有文件引导访客登录。旧版已发出的分享链接继续使用原来的开关。分享通过「分享」中的开关控制。关闭立即撤销链接访问，重新开启可继续使用原链接。
@@ -57,8 +57,8 @@ npm start
 | 需要修改的行为 | 入口 |
 | --- | --- |
 | Agent 系统指令、文件上下文、用户消息、错误纠正和截断续写提示 | [server/agent/prompts.mjs](server/agent/prompts.mjs) 中的 `agentInstructions`、`agentInput`、`continuationInput` |
-| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标前后文、所在段落或列表的层级，以及光标是否在段末。补全可续写句子，也可另起段落、标题和有序列表。调用端在 [src/editor/document-completion.js](src/editor/document-completion.js)。 |
-| 在线正文修改 | Tab 采纳和 `edit_online_file` 共用 [shared/online-file-edit.mjs](shared/online-file-edit.mjs)。补全模型直接返回 Markdown，编辑器将候选绑定到文件 ID、文档快照和富文本光标位置，采纳时作为一次可撤销的修改写入。 |
+| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标前后文、可改写的后文、所在块和代码语言。模型以 JSON 返回原样跳过的前缀 `keep`、删除原文 `remove` 和新增内容 `insert`。服务端检查前两项能否连续匹配光标后的原文。调用端在 [src/editor/inline-completion.js](src/editor/inline-completion.js)。 |
+| 在线正文修改 | Tab 采纳和 `edit_online_file` 共用 [shared/online-file-edit.mjs](shared/online-file-edit.mjs)。两个编辑器将候选绑定到文件 ID、正文快照和光标位置。预览由编辑器装饰层绘制。采纳时以一次可撤销的事务写入 Markdown 或源码，后续未标记的内容保留。 |
 | 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent/run.mjs](server/agent/run.mjs) 的 `runAgent` |
 | 模型协议、上下文窗口、输出 token 和供应商适配 | [server/agent/model.mjs](server/agent/model.mjs)；普通补全和模型发现在 [server/models/client.mjs](server/models/client.mjs) |
 | 工具清单、参数与执行 | [shared/agent-catalog.mjs](shared/agent-catalog.mjs) 的描述和 [server/agent/tools.mjs](server/agent/tools.mjs) 的注册。在线文件的工具参数见 `server/workspace/file-tools.mjs`，目录解析和读写逻辑见 `server/workspace/online-files.mjs`，画布操作见 `server/workspace/canvas-tools.mjs` |
@@ -79,7 +79,7 @@ npm start
 | Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
 | 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。连续 2 次续写都没有推进文件修改时停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
 | Agent 模型预算 | 模型适配层声明 128,000 token 上下文窗口；`XUYE_MAX_OUTPUT_TOKENS` 默认为 32,768，可设置为 1–127,999。部署时按实际模型支持的上限配置 | `server/agent/model.mjs` |
-| 文档补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token | `src/editor/document-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
+| 文档及源码补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
 | 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
 | 对话输入框 | 可拖动上边缘，也可聚焦边缘后按上下键，每次调整 16 px。默认高度 70 px，下限 62 px，上限取 540 px 和窗口高度 52% 中的较小值。偏好保存在浏览器的 `xuye.composerHeight` | `src/chat/composer.js` |
 

@@ -4,7 +4,7 @@ import { $, toast } from "../shared";
 
 const selectionType = "application/x-xuye-selection";
 
-export function installReferenceInput({ editor, getFile, quoteSelection, attachFile, uploadFiles, attachText }) {
+export function installReferenceInput({ editor, getFile, sourceSelection, quoteSelection, attachFile, uploadFiles, attachText }) {
   const panel = $("agent"), htmlInput = $("htmlInput"), composer = $("question");
   let dragged, draggingComposerText = false;
 
@@ -19,8 +19,8 @@ export function installReferenceInput({ editor, getFile, quoteSelection, attachF
       remember(event, selection);
   });
   htmlInput.addEventListener("dragstart", event => {
-    const { selectionStart, selectionEnd, value } = htmlInput;
-    if (selectionStart !== selectionEnd) remember(event, null, { selectionStart, selectionEnd, value });
+    const range = sourceSelection();
+    if (range) remember(event, null, range);
   });
   const accepts = transfer => [contextTransfer, selectionType, "text/plain", "Files"]
     .some(type => transfer.types.includes(type));

@@ -1,4 +1,4 @@
-import { Editor } from "@tiptap/core";
+import { Editor, Extension } from "@tiptap/core";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
 import { closeHistory } from "@tiptap/pm/history";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -33,6 +33,7 @@ export function createDocumentEditor({ completion, getFile, quoteSelection, onCh
         },
       }),
       Markdown,
+      Extension.create({ name: "inlineCompletion", addProseMirrorPlugins: () => [completion.plugin] }),
     ],
     editorProps: {
       attributes: { "aria-label": "文档正文" },
@@ -69,23 +70,13 @@ export function createDocumentEditor({ completion, getFile, quoteSelection, onCh
           );
           return true;
         }
-        return completion.handleKey(view, e);
+        return false;
       },
     },
     onUpdate: ({ editor }) => onChange(editor),
-    onBlur: completion.clear,
   });
   installBlockTools(editor, () => $("file").click(), quoteSelection);
   installDocumentOutline(editor.view.dom);
-  editor.view.dom.addEventListener("compositionstart", () => {
-    completion.composition(true);
-  });
-  editor.view.dom.addEventListener("compositionend", () => {
-    completion.composition(false);
-  });
-  editor.view.dom.addEventListener("pointerdown", completion.clear);
-  $("paperScroll").addEventListener("scroll", completion.reposition, { passive: true });
-  editor.on("selectionUpdate", completion.selectionChanged);
   $("file").onchange = (e) => {
     addImage(e.target.files[0]);
     e.target.value = "";

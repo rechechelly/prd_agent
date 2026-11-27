@@ -1,5 +1,5 @@
 import { diffArrays } from "diff";
-import { $, esc } from "../shared";
+import { esc } from "../shared";
 
 export const emptyHtml = (title) => `<!doctype html>
 <html lang="zh-CN">
@@ -70,70 +70,5 @@ export function sourceEdits(base, proposed) {
       }
       return { body };
     },
-  };
-}
-
-export function installHtmlSource(onEdit) {
-  const input = $("htmlInput"),
-    paint = $("htmlPaint"),
-    nums = $("htmlLineNumbers");
-  function syncScroll() {
-    paint.scrollTop = nums.scrollTop = input.scrollTop;
-    paint.scrollLeft = input.scrollLeft;
-  }
-  function highlight() {
-    const text = input.value;
-    nums.textContent = Array.from(
-      { length: text.split("\n").length },
-      (_, i) => i + 1,
-    ).join("\n");
-    const parts = document.createDocumentFragment();
-    const syntax =
-      /<!--[\s\S]*?(?:-->|$)|<!doctype[^>]*>|<\/?[\w:-]+|\b[\w:-]+(?=\s*=)|"(?:[^"\n]*)"|'(?:[^'\n]*)'/gi;
-    let from = 0;
-    for (const match of text.matchAll(syntax)) {
-      parts.append(text.slice(from, match.index));
-      const token = document.createElement("span");
-      token.className = match[0].startsWith("<!--")
-        ? "codeComment"
-        : match[0][0] === "<"
-          ? "codeTag"
-          : /^['"]/.test(match[0])
-            ? "codeString"
-            : "codeAttr";
-      token.textContent = match[0];
-      parts.append(token);
-      from = match.index + match[0].length;
-    }
-    parts.append(text.slice(from) + "\n");
-    paint.replaceChildren(parts);
-    syncScroll();
-  }
-  input.oninput = () => {
-    highlight();
-    onEdit(input.value);
-  };
-  input.onscroll = syncScroll;
-  input.onkeydown = (e) => {
-    if (
-      e.key === "Tab" &&
-      !e.shiftKey &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      !e.altKey
-    ) {
-      e.preventDefault();
-      document.execCommand("insertText", false, "  ");
-    }
-  };
-  return (source, reset = false) => {
-    if (reset || input.value !== source.replace(/\r\n?/g, "\n")) {
-      input.value = source;
-      if (reset) {
-        input.setSelectionRange(0, 0);
-        input.scrollTop = input.scrollLeft = 0;
-      }
-      highlight();
-    }
   };
 }
