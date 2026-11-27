@@ -165,10 +165,13 @@ export async function openTaskNetwork(stage, input) {
     }
   });
   const isLinux = process.platform === "linux";
+  // A crashed worker can leave its Unix socket on disk. A resumed task keeps
+  // the same staging area and opens a fresh listener for this attempt.
+  const socketPath = path.join(stage, "inputs", "n-" + token.slice(0, 8));
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     if (isLinux)
-      server.listen(path.join(stage, "inputs", "network.sock"), resolve);
+      server.listen(socketPath, resolve);
     else server.listen(0, "127.0.0.1", resolve);
   });
   const port = isLinux ? 18745 : server.address().port;
@@ -177,6 +180,7 @@ export async function openTaskNetwork(stage, input) {
   return {
     vars: {
       TASK_PROXY_PORT: String(port),
+      ...(isLinux && { TASK_PROXY_SOCKET: socketPath }),
       https_proxy: proxy,
       HTTPS_PROXY: proxy,
       no_proxy: "127.0.0.1,localhost",

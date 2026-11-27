@@ -1,6 +1,7 @@
 import { DOMSerializer, Slice } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { TextSelection } from "@tiptap/pm/state";
+import { editOnlineFileBody } from "../../shared/online-file-edit.mjs";
 import { api, flush, online } from "../service";
 import { selectedModel } from "../workspace/providers";
 import { toast } from "../shared";
@@ -25,6 +26,35 @@ function offlineSuggestion(before, previous, inCode, title) {
   return previous?.startsWith("**")
     ? "- 确认「" + topic + "」的适用范围。\n- 补充边界情况的验收示例。"
     : "**验收条件**：确认「" + topic + "」的正常结果和空状态。";
+}
+
+function markdownInsertion(editor, source, $from, preview) {
+  // A leading line break separates the suggestion from text already in the editor.
+  // Parse the remaining Markdown on its own so the separator doesn't add an empty block.
+  const separator = /^[ \t]*\r?\n(?:[ \t]*\r?\n)?/.exec(source);
+  const markdown = separator ? source.slice(separator[0].length) : source;
+  const blocks = editor.schema.nodeFromJSON(editor.markdown.parse(markdown)).content;
+  preview.append(DOMSerializer.fromSchema(editor.schema).serializeFragment(blocks));
+  const beginsWithParagraph = blocks.firstChild?.type.name === "paragraph";
+  if (!separator && blocks.childCount === 1 && beginsWithParagraph) {
+    const inline = blocks.firstChild.content;
+    if (inline.childCount === 1 && inline.firstChild.isText && !inline.firstChild.marks.length)
+      return inline.firstChild.text;
+    return new Slice(inline, 0, 0);
+  }
+  // Only a prose continuation joins the left edge. Close the right edge so an
+  // inserted section cannot take the rest of the original paragraph into its last block.
+  const joinLeft = !separator && beginsWithParagraph && $from.parentOffset > 0;
+  return new Slice(blocks, joinLeft ? 1 : 0, 0);
+}
+
+function blockPathAt($from) {
+  const names = [];
+  for (let depth = 1; depth <= $from.depth; depth++) {
+    const node = $from.node(depth);
+    names.push(node.type.name === "heading" ? "H" + node.attrs.level : node.type.name);
+  }
+  return names.join(" / ");
 }
 
 export function documentCompletion({ getEditor, getDocument, enabled, popup, scrollport }) {
@@ -68,10 +98,11 @@ export function documentCompletion({ getEditor, getDocument, enabled, popup, scr
     previous = rejected;
     const file = getDocument();
     const { doc: content, selection: { $from, from } } = editor.state;
+    const range = { fileId: file.id, base: content, from, to: from };
     const inCode = !!$from.parent.type.spec.code;
     const token = new AbortController();
     controller = token;
-    const current = () => !token.signal.aborted && eligible(editor) &&
+    const current = () => !token.signal.aborted && getEditor() === editor && eligible(editor) &&
       file === getDocument() && editor.state.doc === content && editor.state.selection.from === from;
     async function generate() {
       delay = undefined;
@@ -85,6 +116,7 @@ export function documentCompletion({ getEditor, getDocument, enabled, popup, scr
         if (!current()) return;
         const source = online ? (await api("agent", {
           mode: "complete", doc: file.id, before, after,
+          blockPath: blockPathAt($from), atBlockEnd: $from.parentOffset === $from.parent.content.size,
           modelId: selectedModel("completion"), previous: rejected,
           codeLanguage: inCode ? $from.parent.attrs.language || "" : undefined,
         }, token.signal)).text : offlineSuggestion(before, rejected, inCode, file.title);
@@ -97,11 +129,9 @@ export function documentCompletion({ getEditor, getDocument, enabled, popup, scr
           const pre = document.createElement("pre");
           pre.textContent = code;
           body.append(pre);
-          candidate = { source, code };
+          candidate = { source, range, content: code, current };
         } else {
-          const parsed = editor.schema.nodeFromJSON(editor.markdown.parse(source));
-          body.append(DOMSerializer.fromSchema(editor.schema).serializeFragment(parsed.content));
-          candidate = { source, parsed };
+          candidate = { source, range, content: markdownInsertion(editor, source, $from, body), current };
         }
         const hint = document.createElement("small");
         hint.textContent = "Tab 采纳 · 双击 Tab 换一版";
@@ -123,24 +153,12 @@ export function documentCompletion({ getEditor, getDocument, enabled, popup, scr
     else delay = setTimeout(generate, 550);
   }
   function accept(editor, result) {
+    if (candidate !== result || !result.current()) return;
     const tr = closeHistory(editor.state.tr);
-    if (result.code !== undefined) tr.insertText(result.code);
-    else {
-      const blocks = result.parsed.content;
-      if (!blocks.size) return;
-      const singleParagraph = blocks.childCount === 1 && blocks.firstChild.type.name === "paragraph";
-      if (singleParagraph) {
-        const inline = blocks.firstChild.content;
-        if (inline.childCount === 1 && inline.firstChild.isText && !inline.firstChild.marks.length)
-          tr.insertText(inline.firstChild.text);
-        else tr.replaceSelection(new Slice(inline, 0, 0));
-      } else {
-        const inText = editor.state.selection.$from.parent.content.size > 0;
-        tr.replaceSelection(new Slice(blocks,
-          inText && blocks.firstChild.type.name === "paragraph" ? 1 : 0,
-          inText && blocks.lastChild.type.name === "paragraph" ? 1 : 0));
-      }
-    }
+    editOnlineFileBody(getDocument().id, tr.doc, result, (from, to, content) => {
+      if (typeof content === "string") tr.insertText(content, from, to);
+      else TextSelection.create(tr.doc, from, to).replace(tr, content);
+    });
     editor.view.dispatch(tr.scrollIntoView());
     clear();
   }

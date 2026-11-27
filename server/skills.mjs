@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { directory, fault, db, setting, set } from "./storage.mjs";
 import { parse } from "yaml";
 
 const project = fileURLToPath(new URL("../", import.meta.url));
-const managed = path.join(directory, "skills");
+export const managedSkillDirectory = path.join(fs.realpathSync(directory), "skills");
 const validName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const escape = (s) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -32,20 +33,31 @@ function metadata(text, folder) {
   return meta;
 }
 
+const skillReader = fileURLToPath(new URL("./runtime/skill-files.py", import.meta.url));
+function workspaceSkills(operation, ...args) {
+  try {
+    return JSON.parse(execFileSync("python3", ["-I", skillReader, managedSkillDirectory, operation, ...args],
+      { maxBuffer: 54_000_000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  } catch (error) {
+    throw Error(error.stderr?.trim() || "工作区技能暂时无法读取");
+  }
+}
+
 export function discoverSkills() {
   const skills = new Map(),
     warnings = [];
-  function register(dir) {
+  function register(dir, entry) {
     if (
-      path.dirname(dir) !== managed &&
+      path.dirname(dir) !== managedSkillDirectory &&
       setting("skill-hidden:" + path.basename(dir))
     )
       return;
     const filename = path.join(dir, "SKILL.md");
-    if (!fs.existsSync(filename)) return;
+    if (!entry && !fs.existsSync(filename)) return;
     try {
-      if (!fs.lstatSync(filename).isFile()) throw Error("入口需要为普通文件");
-      const text = fs.readFileSync(filename, "utf8").replace(/^\uFEFF/, "");
+      if (entry?.error) throw Error(entry.error);
+      if (!entry && !fs.lstatSync(filename).isFile()) throw Error("入口需要为普通文件");
+      const text = entry?.text ?? fs.readFileSync(filename, "utf8").replace(/^\uFEFF/, "");
       const meta = metadata(text, path.basename(dir));
       const { name, description } = meta;
       if (skills.has(name)) {
@@ -56,7 +68,7 @@ export function discoverSkills() {
         name,
         description: description.trim(),
         dir,
-        file: "skills/" + name + "/SKILL.md",
+        file: (entry ? ".agents/skills/" : "skills/") + name + "/SKILL.md",
         manual: meta["disable-model-invocation"] === true,
       });
     } catch (error) {
@@ -64,7 +76,7 @@ export function discoverSkills() {
     }
   }
   const roots = [
-    managed,
+    managedSkillDirectory,
     path.join(project, ".agents/skills"),
     path.join(project, "skills"),
     ...(process.env.XUYE_SKILL_DIRS || "")
@@ -73,8 +85,17 @@ export function discoverSkills() {
   ];
   for (const root of roots) {
     if (!fs.existsSync(root)) continue;
+    if (root === managedSkillDirectory && !fs.lstatSync(root).isDirectory()) {
+      warnings.push("工作区技能需要存放在独立目录中");
+      continue;
+    }
     if (!fs.statSync(root).isDirectory()) {
       warnings.push("技能搜索路径不是目录：" + root);
+      continue;
+    }
+    if (root === managedSkillDirectory) {
+      if (fs.readdirSync(root).length)
+        for (const entry of workspaceSkills("index")) register(path.join(root, entry.name), entry);
       continue;
     }
     for (const entry of fs
@@ -90,28 +111,14 @@ export function discoverSkills() {
 export function skillRuntime(catalog, prior = []) {
   const previous = new Set(prior.filter((name) => catalog.skills.has(name)));
   const active = new Set();
-  function contents(skill, rel) {
-    const target = path.join(skill.dir, rel);
-    if (!fs.existsSync(target)) return;
-    const real = fs.realpathSync(target);
-    if (
-      !real.startsWith(fs.realpathSync(skill.dir) + path.sep) ||
-      !fs.statSync(real).isFile()
-    )
-      return;
-    return fs.readFileSync(real);
-  }
   function load(name, { explicit = false } = {}) {
     const skill = catalog.skills.get(name);
     if (!skill || (skill.manual && !explicit))
       throw Error("技能不可自动加载或未安装：" + name);
-    const source = contents(skill, "SKILL.md");
-    if (!source) throw Error("技能入口不可读取：" + skill.file);
-    const body = source
-      .toString("utf8")
-      .replace(/^\uFEFF/, "")
-      .replace(frontmatter, "")
-      .trim();
+    const text = path.dirname(skill.dir) === managedSkillDirectory
+      ? workspaceSkills("entry", name)
+      : fs.readFileSync(path.join(skill.dir, "SKILL.md"), "utf8").replace(/^\uFEFF/, "");
+    const body = text.replace(frontmatter, "").trim();
     if (!body) throw Error("技能正文为空：" + name);
     active.add(name);
     const previousTools = {
@@ -123,16 +130,16 @@ export function skillRuntime(catalog, prior = []) {
       .map(([old, current]) => old + " → " + current);
     const toolNote = renames.length
       ? "本技能使用旧版在线工具名，请按本轮工具清单调用：" + renames.join("，") +
-        "。路径相对于在线工作区根目录，创建子文件传 parent_id。任务草稿使用 import_task_file_to_workspace。\n"
+        "。路径相对于在线工作区根目录，创建子文件传 parent_id。任务草稿用 read 读取，再用 content 提交。\n"
       : "";
     return (
       '<skill name="' +
       name +
       '" location="' +
       skill.file +
-      '">\n包内引用相对于 skills/' +
-      name +
-      "/。\n\n" +
+      '">\n包内引用相对于 ' +
+      path.posix.dirname(skill.file) +
+      "/。个人可编辑的技能存放在 .agents/skills/。\n\n" +
       toolNote + body +
       "\n</skill>"
     );
@@ -141,19 +148,8 @@ export function skillRuntime(catalog, prior = []) {
     for (const slug of new Set([...previous, ...active])) {
       if (mounted.has(slug)) continue;
       const skill = catalog.skills.get(slug);
-      function walk(dir, prefix) {
-        for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (item.name.startsWith(".") || item.name === "node_modules")
-            continue;
-          const rel = prefix + item.name;
-          if (item.isDirectory()) walk(path.join(dir, item.name), rel + "/");
-          else if (item.isFile()) {
-            const key = "skills/" + slug + "/" + rel;
-            if (!Object.hasOwn(files, key)) files[key] = contents(skill, rel);
-          }
-        }
-      }
-      walk(skill.dir, "");
+      for (const { path: relative, data } of packageFiles(skill))
+        files["skills/" + slug + "/" + relative] = data;
       mounted.add(slug);
     }
   }
@@ -186,8 +182,9 @@ export function installSkill({ name, files }) {
   )
     fault("请选择包含 SKILL.md 的技能文件夹");
   if (discoverSkills().skills.has(name)) fault("同名技能已安装：" + name, 409);
-  const root = path.join(directory, "skills");
+  const root = managedSkillDirectory;
   fs.mkdirSync(root, { recursive: true });
+  if (!fs.lstatSync(root).isDirectory()) fault("工作区技能需要存放在独立目录中");
   const stage = fs.mkdtempSync(path.join(directory, "skill-install-"));
   try {
     for (const file of files) {
@@ -245,8 +242,8 @@ export function migrateWritingRule() {
     try {
       fs.cpSync(skill.dir, stage, { recursive: true });
       fs.writeFileSync(path.join(stage, "generation-prompt.txt"), rule);
-      fs.mkdirSync(managed, { recursive: true });
-      fs.renameSync(stage, path.join(managed, name));
+      fs.mkdirSync(managedSkillDirectory, { recursive: true });
+      fs.renameSync(stage, path.join(managedSkillDirectory, name));
     } finally {
       fs.rmSync(stage, { recursive: true, force: true });
     }
@@ -259,7 +256,7 @@ export function removeSkill({ name }) {
   if (!skill) fault("技能未安装", 404);
   // Hide lower-priority copies, including when a replacement is later removed.
   set("skill-hidden:" + name, "1");
-  if (skill.dir === path.join(managed, name)) {
+  if (skill.dir === path.join(managedSkillDirectory, name)) {
     const trash = fs.mkdtempSync(path.join(directory, "skill-remove-"));
     try {
       fs.renameSync(skill.dir, path.join(trash, name));
@@ -270,9 +267,9 @@ export function removeSkill({ name }) {
   return { name };
 }
 
-export function skillPackage(name) {
-  const skill = discoverSkills().skills.get(name);
-  if (!skill) fault("技能未安装", 404);
+function packageFiles(skill) {
+  if (path.dirname(skill.dir) === managedSkillDirectory)
+    return workspaceSkills("package", skill.name).map(f => ({ path: f.path, data: Buffer.from(f.data, "base64") }));
   const files = [];
   function visit(dir, prefix) {
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -286,4 +283,10 @@ export function skillPackage(name) {
   }
   visit(skill.dir, "");
   return files;
+}
+
+export function skillPackage(name) {
+  const skill = discoverSkills().skills.get(name);
+  if (!skill) fault("技能未安装", 404);
+  return packageFiles(skill);
 }

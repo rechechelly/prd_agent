@@ -1,54 +1,20 @@
-import {
-  contextTransfer,
-  fileLabel,
-  fileLabels,
-} from "../../shared/assistant-context.mjs";
+import { contextTransfer } from "../../shared/assistant-context.mjs";
 import { $, icon } from "../shared";
 
 let previousClick;
 const itemTransfer = "application/x-xuye-directory";
-export { fileLabel } from "../../shared/assistant-context.mjs";
-export const outputLabel = (output) =>
-  output.directoryName || "交付件 · v" + output.version;
-export const outputKeys = (output) =>
-  [...new Set([...(output.fileOrder || []), "html", "prd"])].filter(
-    (key) => Object.hasOwn(fileLabels, key) && output[key],
-  );
-
-// A generated file keeps its source/version identity even when moved in the tree.
 export function directoryIndex(folders, docs) {
   const entries = new Map(),
     groups = new Map();
-  function add(entry, location, defaultParent = "") {
-    entry.parent = location?.parent ?? defaultParent;
-    entry.position = location?.position ?? Infinity;
+  function add(type, item) {
+    const entry = { type, item, key: item.id, title: item.title,
+      parent: item.parent || "", position: item.position ?? Infinity };
     entries.set(entry.key, entry);
     if (!groups.has(entry.parent)) groups.set(entry.parent, []);
     groups.get(entry.parent).push(entry);
   }
-  for (const item of folders)
-    add({ type: "folder", key: item.id, item, title: item.title }, item);
-  for (const item of docs) {
-    if (!item.detachedSource)
-      add({ type: "doc", key: item.id, item, title: item.title }, item);
-    for (const output of item.outputs || []) {
-      const key = item.id + "-" + output.version;
-
-      for (const file of outputKeys(output))
-        add(
-          {
-            type: "file",
-            key: key + "-" + file,
-            doc: item,
-            output,
-            item: file,
-            title: fileLabel(output, file),
-          },
-          output.fileLocations?.[file],
-          item.id,
-        );
-    }
-  }
+  for (const item of folders) add("folder", item);
+  for (const item of docs) add("doc", item);
   for (const group of groups.values())
     group.sort((a, b) => a.position - b.position);
   function ancestors(key) {
@@ -64,16 +30,6 @@ export function directoryIndex(folders, docs) {
   }
   return { entries, groups, ancestors };
 }
-function locate(entry, parent, position) {
-  let location = entry.item;
-  if (entry.type === "output") location = entry.item.location ||= {};
-  if (entry.type === "file") {
-    const locations = (entry.output.fileLocations ||= {});
-    location = locations[entry.item] ||= {};
-  }
-  Object.assign(location, { parent, position });
-}
-
 function insert(items, item, target, after) {
   const siblings = items.filter((sibling) => sibling !== item);
   const index = target
@@ -83,19 +39,8 @@ function insert(items, item, target, after) {
   return siblings;
 }
 
-export function renderDirectory({
-  folders,
-  docs,
-  closed,
-  selectDoc,
-  selectFile,
-  quoteFile,
-  createChild,
-  remove,
-  moved,
-  renamed,
-  selected,
-}) {
+export function renderDirectory(options) {
+  const { folders, docs, closed, selectDoc, quoteFile, createChild, remove, moved, renamed, selected } = options;
   const tree = $("tree");
   const label = $("sidebar").querySelector(".treelabel");
   const scroll = tree.scrollTop;
@@ -124,7 +69,7 @@ export function renderDirectory({
     if (!next) return;
     const peers = index.groups.get(next.parent) || [];
     insert(peers, source, next.sibling, place === "after").forEach((entry, i) =>
-      locate(entry, next.parent, i),
+      Object.assign(entry.item, { parent: next.parent, position: i }),
     );
     if (next.parent) closed.delete(next.parent);
     moved(source.key);
@@ -194,10 +139,7 @@ export function renderDirectory({
         input.remove();
         item.classList.remove("renaming");
         if (commit && name && name !== entry.title) {
-          if (entry.type === "file")
-            (entry.output.fileNames ||= {})[entry.item] = name;
-          else if (entry.type === "output") entry.item.directoryName = name;
-          else entry.item.title = name;
+          entry.item.title = name;
           entry.title = label.textContent = button.title = name;
           del.title = del.ariaLabel = "删除 " + name;
           plus.title = plus.ariaLabel = "在「" + name + "」下新建";
@@ -238,18 +180,8 @@ export function renderDirectory({
     };
     if (expanded !== undefined)
       button.setAttribute("aria-expanded", String(expanded));
-    if (entry.type === "doc" || entry.type === "folder")
-      button.dataset.node = entry.item.id;
-    const ref =
-      entry.type === "doc"
-        ? { id: entry.item.id }
-        : entry.type === "file"
-          ? {
-              id: entry.doc.id,
-              version: entry.output.version,
-              file: entry.item,
-            }
-          : null;
+    button.dataset.node = entry.item.id;
+    const ref = entry.type === "doc" ? { id: entry.item.id } : null;
     button.draggable = true;
     button.ondragstart = (event) => {
       previousClick = null;
@@ -314,18 +246,7 @@ export function renderDirectory({
   }
   function toggle(key) {
     closed.has(key) ? closed.delete(key) : closed.add(key);
-    renderDirectory({
-      folders,
-      docs,
-      closed,
-      selectDoc,
-      selectFile,
-      createChild,
-      remove,
-      moved,
-      renamed,
-      selected,
-    });
+    renderDirectory(options);
     [...tree.querySelectorAll(".tree-row")]
       .find((row) => row.dataset.treeKey === key)
       ?.querySelector(".node")
@@ -334,27 +255,15 @@ export function renderDirectory({
   function branch(parent, depth) {
     for (const entry of index.groups.get(parent) || []) {
       const { type, key, item } = entry;
-      const container = type === "folder" || type === "output";
+      const container = type === "folder";
       const hasChildren = index.groups.has(key);
-      const glyph = container
-        ? "folder"
-        : type === "file"
-          ? item === "html"
-            ? "code"
-            : "doc"
-          : item.type === "画布"
-            ? "board"
-            : item.type !== "交互 HTML"
-              ? "doc"
-              : "code";
-      const activate = container
-        ? () => {
-            closed.delete(key);
-            selectDoc(item);
-          }
-        : type === "file"
-          ? () => selectFile(entry.doc, entry.output, item)
-          : () => selectDoc(item);
+      const glyph = container ? "folder"
+        : item.type === "画布" ? "board"
+        : item.type === "交互 HTML" ? "code" : "doc";
+      const activate = () => {
+        if (container) closed.delete(key);
+        selectDoc(item);
+      };
       row(
         entry,
         depth,

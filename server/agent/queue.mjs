@@ -12,6 +12,16 @@ const Queue = defineDoc({
   kind: "xuye.message-queue", version: 1, scope: "session",
   initial: () => ({ items: [] }), checkpointWhen: () => true,
 });
+// The SDK owns task and submission state. This document only associates its
+// current submission with the host's staging area for online-file previews.
+export const WorkspaceRun = defineDoc({
+  kind: "xuye.workspace-run", version: 1, scope: "session",
+  initial: () => ({ current: null }), checkpointWhen: () => true,
+});
+export const WorkspaceAnswer = defineDoc({
+  kind: "xuye.workspace-answer", version: 1, scope: "session",
+  initial: () => ({ result: null }), checkpointWhen: () => true,
+});
 const writers = new Map();
 const locks = new Map();
 async function exclusive(path, action) {
@@ -35,6 +45,15 @@ export function closeChatHarness(path, harness) {
     await harness.close(ctx);
   });
 }
+export function workspaceSnapshot(path, document = WorkspaceRun) {
+  return exclusive(path, async () => {
+    if (!existsSync(path)) return;
+    const writer = writers.get(path);
+    const store = writer || createSession(await openNodeSqliteStorage(path));
+    try { return await store.snapshot(document, ctx); }
+    finally { if (!writer) await store.close(ctx); }
+  });
+}
 export async function messageQueue(path, action = "list", input = {}) {
   return exclusive(path, async () => {
     const writer = writers.get(path);
@@ -46,7 +65,8 @@ export async function messageQueue(path, action = "list", input = {}) {
         const queue = await tx.doc(Queue);
         const index = queue.items.findIndex(item => item.requestId === input.requestId);
         if (action === "add") {
-          if (index < 0) queue.items.push(input);
+          if (index < 0 && (await tx.doc(WorkspaceRun)).current?.requestId !== input.requestId)
+            queue.items.push(input);
         } else if (action === "rejectSelection") {
           if (index >= 0) queue.items.splice(index, 1);
         } else if (action === "prioritize") {

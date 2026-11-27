@@ -1,3 +1,4 @@
+import { toast } from "../shared";
 import Image from "@tiptap/extension-image";
 import { NodeSelection } from "@tiptap/pm/state";
 import { closeHistory } from "@tiptap/pm/history";
@@ -83,7 +84,7 @@ export const DocumentImage = Image.extend({
   },
 });
 
-export function readDocumentImage(file) {
+function readDocumentImage(file) {
   return new Promise((resolve, reject) => {
     if (!file || !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
       reject(new Error("请选择 PNG、JPEG、WebP 或 GIF 图片"));
@@ -94,4 +95,50 @@ export function readDocumentImage(file) {
     reader.onerror = () => reject(new Error("图片读取失败，请重新选择"));
     reader.readAsDataURL(file);
   });
+}
+
+export async function insertDocumentImage(editor, file, isCurrent) {
+  const view = editor.view;
+  let bookmark = editor.state.selection.getBookmark();
+  const track = ({ transaction }) => {
+    bookmark = bookmark.map(transaction.mapping);
+  };
+  editor.on("transaction", track);
+  try {
+    const src = await readDocumentImage(file);
+    const image = new window.Image();
+    image.src = src;
+    await image.decode();
+    if (!isCurrent()) return;
+    const selection = bookmark.resolve(editor.state.doc);
+    const dom = view.domAtPos(selection.from).node;
+    const cell = (dom.nodeType === 1 ? dom : dom.parentElement)?.closest(
+      "td,th",
+    );
+    const width = cell
+      ? Math.max(1, Math.min(image.naturalWidth, cell.clientWidth - 20))
+      : null;
+    const attrs = { src, alt: file.name || "文档图片" };
+    if (width)
+      Object.assign(attrs, {
+        width,
+        height: Math.max(
+          1,
+          Math.round((width * image.naturalHeight) / image.naturalWidth),
+        ),
+      });
+    editor
+      .chain()
+      .focus()
+      .command(({ tr }) => {
+        closeHistory(tr).setSelection(selection);
+        return true;
+      })
+      .setImage(attrs)
+      .run();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    editor.off("transaction", track);
+  }
 }

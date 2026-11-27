@@ -1,37 +1,30 @@
-import {initModels,setModels,selectedModel} from "./workspace/providers";
+import { migrateDirectory } from "./workspace/migration";
+import { applyDelivery } from "./workspace/deliveries";
+import { shareFile, publicBoard } from "./review/file-sharing";
+import { initModels, setModels, selectedModel } from "./workspace/providers";
 import { documentCompletion } from "./editor/document-completion";
 import { queueState, syncQueue, renderQueue } from "./chat/chat-queue";
 import { readTurns, findTurn, tracePanel } from "./chat/chat-trace";
-import { generatedFiles, boardType } from "../shared/workspace-files.mjs";
+import { boardType } from "../shared/workspace-files.mjs";
 import { emptyHtml, sourceEdits, installHtmlSource } from "./workspace/html-source";
-import { installBlockTools } from "./editor/block-tools";
-import { installDocumentOutline } from "./editor/document-outline";
-import { TaskList, TaskItem } from "@tiptap/extension-list";
+import { createDocumentEditor } from "./editor/document-editor";
 import { sceneVersion } from "../shared/canvas-model.mjs";
-import { sessions, selectedSession, sessionName, migrateExternalReviews } from "./chat/chat-sessions";
+import { sessions, selectedSession, sessionName } from "./chat/chat-sessions";
 import { installComposer } from "./chat/composer";
+import { renderChatMarkdown } from "./chat/markdown";
+import { installReferenceInput } from "./chat/reference-input";
 import { documentRange, rawRange, rangeReference } from "./editor/selection-reference";
-import { toolDescriptions, toolGroups } from "../shared/agent-catalog.mjs";
+import { installWorkspaceSettings } from "./workspace/settings";
+import { exampleWorkspace } from "./workspace/example";
 import { planEdits, wireEdits } from "./editor/edit-comparison";
-import deltaStyle from "./editor/inline-review-style.txt";
-import { contextTransfer, fileKey, resolveFile } from "../shared/assistant-context.mjs";
+import { fileKey, resolveFile } from "../shared/assistant-context.mjs";
 import {
   directoryIndex,
-  outputKeys,
-  fileLabel,
   renderDirectory,
 } from "./workspace/directory";
-import { Editor } from "@tiptap/core";
 import { DOMSerializer, DOMParser as SchemaParser } from "@tiptap/pm/model";
-import { DocumentImage, readDocumentImage } from "./editor/document-image";
-import { closeHistory } from "@tiptap/pm/history";
-import { EditorState, NodeSelection } from "@tiptap/pm/state";
-import StarterKit from "@tiptap/starter-kit";
-import { TableKit } from "@tiptap/extension-table";
-import { Markdown } from "@tiptap/markdown";
+import { EditorState } from "@tiptap/pm/state";
 import {
-  demoScene,
-  sceneImage,
   mountBoard,
   unmountBoard,
   proposedScene,
@@ -39,7 +32,7 @@ import {
   addIcon,
 } from "./workspace/board";
 import { openGenerationLog } from "./workspace/generation-log";
-import { $, esc, icon, decorate, dialog, confirmDelete, toast } from "./shared";
+import { $, esc, icon, decorate, dialog, toast } from "./shared";
 import DOMPurify from "dompurify";
 import { installLayout } from "./workspace/layout";
 import {
@@ -51,48 +44,22 @@ import {
   streamChat,
 } from "./service";
 import { openDiscussion, stopReview } from "./review/review";
-const folders = [
-  { id: "product", title: "产品设计", parent: "" },
-  { id: "research", title: "用户研究", parent: "product" },
-  { id: "personal", title: "日常备忘", parent: "" },
-];
-const docs = [
-  {
-    id: "feedback",
-    title: "客户反馈池",
-    type: "需求文档",
-    parent: "product",
-    html: "",
-  },
-  {
-    id: "interview",
-    title: "客户访谈摘录",
-    type: "备忘录",
-    parent: "research",
-    html: "<h2>反馈处理</h2><p>访谈示例：希望产品经理能按状态查看客户反馈，并快速找到反馈来源。</p>",
-  },
-  {
-    id: "review",
-    title: "需求评审备忘",
-    type: "备忘录",
-    parent: "personal",
-    html: "<p>评审前核对交互原型、字段口径和待确认事项。</p>",
-  },
-  {
-    id: "week",
-    title: "本周灵感",
-    type: "备忘录",
-    parent: "personal",
-    html: "<p>记录值得再次讨论的产品想法。</p>",
-  },
-];
+import "./style.css";
+import "./editor/block-tools.css";
+import "./editor/inline-review.css";
+import "./editor/document-outline.css";
+import "./workspace/html-source.css";
+import "./workspace/settings.css";
+import "./chat/conversation.css";
+
+const folders = [], docs = [];
 const date = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric",
   month: "long",
   day: "numeric",
 }).format(new Date());
 const closed = new Set(["research"]);
-let doc = docs[0],
+let doc,
   loadedDoc,
   page = "work",
   editor,
@@ -122,17 +89,18 @@ function switchComposer(target) {
 function snapshot() {
   return { docs, folders, completionEnabled };
 }
-async function quoteSelection(selection) {
+async function quoteSelection(selection, rawSelection) {
   if (!online) return toast("请在登录版工作台使用划词提问");
   const file = doc, session = currentComposer, source = file.html;
   try {
     const range = file.type === "交互 HTML"
-      ? rawRange($("htmlInput"), source)
+      ? rawRange(rawSelection || $("htmlInput"), source)
       : documentRange(editor, source, selection);
     const ref = await rangeReference(file, range, source);
     if (session !== currentComposer || file !== doc || source !== file.html) return;
-    quoted = quoted.filter(item => item.kind !== "range");
-    quoted.push(ref);
+    const index = quoted.findIndex(item => item.kind === "range");
+    if (index < 0) quoted.push(ref);
+    else quoted[index] = ref;
     openAgent = true;
     header();
     editComposer?.();
@@ -228,15 +196,6 @@ function renderQuotes() {
     area.append(b);
   });
 }
-function fileTitle() {
-  return doc?.title || "";
-}
-function chatTarget() {
-  return doc;
-}
-function targetContent(target) {
-  return target.html;
-}
 const editPlans = new WeakMap();
 let visibleProposal, writeSource;
 let rawMode = false;
@@ -269,7 +228,7 @@ function updateHtmlView(sourceDiff, renderSource = doc.html) {
   refreshSourceQuote();
 }
 function reviewDraft(focusIndex) {
-  const target = chatTarget();
+  const target = doc;
 
   const pending = selectedSession(target)?.messages.findLast(m => typeof m.proposed === "string" && !m.resolved)
     || target?.externalReviews?.find(m => typeof m.proposed === "string" && !m.resolved);
@@ -282,7 +241,7 @@ function reviewDraft(focusIndex) {
   review.hidden = !pending;
   const stale =
     pending &&
-    (pending.reviewCurrent ?? pending.base) !== targetContent(target);
+    (pending.reviewCurrent ?? pending.base) !== target.html;
   if (visibleProposal !== pending) previewOriginal = false;
   const inline = !!pending && !stale && !previewOriginal;
   if (!isHtml) {
@@ -301,7 +260,7 @@ function reviewDraft(focusIndex) {
       pending,
       isHtml
         ? sourceEdits(pending.base, pending.proposed)
-        : planEdits(pending.base, pending.proposed, false),
+        : planEdits(pending.base, pending.proposed),
     );
   const plan = editPlans.get(pending),
     previousChoices = pending.reviewChoices,
@@ -333,7 +292,7 @@ function reviewDraft(focusIndex) {
   function decide(id, keep) {
     if (scopedDocument) id = null;
     if (
-      target !== chatTarget() ||
+      target !== doc ||
       pending.resolved ||
       pending.reviewChoices !== previousChoices ||
       (id !== null && choices[id])
@@ -341,7 +300,7 @@ function reviewDraft(focusIndex) {
       return;
     if (
       (keep || id !== null) &&
-      (pending.reviewCurrent ?? pending.base) !== targetContent(target)
+      (pending.reviewCurrent ?? pending.base) !== target.html
     ) {
       toast("正文已变化，请重新请求修改");
       reviewDraft();
@@ -363,7 +322,7 @@ function reviewDraft(focusIndex) {
         });
         doc.html = scopedDocument ? pending.proposed : editor.getHTML();
       }
-      if (!done) pending.reviewCurrent = targetContent(target);
+      if (!done) pending.reviewCurrent = target.html;
     }
     if (done) {
       const values = Object.values(next);
@@ -463,7 +422,7 @@ function firstDocument() {
       if (child) return child;
     }
   }
-  return first("") || docs.find((d) => !d.detachedSource);
+  return first("") || docs[0];
 }
 function openFirstFile() {
   const next = firstDocument();
@@ -480,7 +439,6 @@ function confirmDeletion(entry) {
   }
   const removing = Array.from(removed, (key) => index.entries.get(key));
   const removesPrd = removing.some((e) => e.item.type === "文档");
-  const removesShare = true;
   const detail =
     removing.length > 1
       ? "<p>将同时删除 " +
@@ -499,7 +457,7 @@ function confirmDeletion(entry) {
       esc(title) +
       "」？</p>" +
       detail +
-      (removesShare ? "<p>对应的工作区分享链接会失效。</p>" : "") +
+      "<p>对应的工作区分享链接会失效。</p>" +
       (removesPrd ? "<p>被删除的 PRD 评论也会一起删除。</p>" : ""),
     () => {
       for (const { item, type } of removing) {
@@ -514,12 +472,6 @@ function confirmDeletion(entry) {
         .catch((e) => toast(e.message));
     },
     "删除",
-  );
-}
-function lastVersion(d) {
-  return Math.max(
-    d.lastOutputVersion || 0,
-    ...(d.outputs || []).map((a) => a.version),
   );
 }
 function header() {
@@ -574,7 +526,7 @@ function show(p) {
     mountedBoard = mountedPatch = null;
   }
   page = p;
-  switchComposer(selectedSession(chatTarget()));
+  switchComposer(selectedSession(doc));
   for (const id of ["work", "boardPage", "result", "emptyPage"])
     $(id).hidden = p !== id;
   $("sidebar").classList.remove("open");
@@ -758,90 +710,6 @@ function create(parent = "") {
   );
   $("name").focus();
 }
-function migrateDirectory() {
-  let migrated = false;
-  for (const file of [...docs, ...folders]) {
-    if (migrateExternalReviews(file)) migrated = true;
-  }
-  const groups = new Map();
-  const locations = [...docs, ...folders];
-  for (const owner of docs)
-    for (const output of owner.outputs || []) {
-      const key = owner.id + "-" + output.version;
-      groups.set(key, output.location?.parent ?? owner.id);
-      for (const file of outputKeys(output)) {
-        const location = output.fileLocations?.[file];
-        if (location) locations.push(location);
-        else if (output.location) {
-          (output.fileLocations ||= {})[file] = { ...output.location };
-          locations.push(output.fileLocations[file]);
-          migrated = true;
-        }
-      }
-      if (output.location) {
-        delete output.location;
-        migrated = true;
-      }
-    }
-  for (const item of locations) {
-    const seen = new Set();
-    while (groups.has(item.parent) && !seen.has(item.parent)) {
-      seen.add(item.parent);
-      item.parent = groups.get(item.parent);
-      migrated = true;
-    }
-  }
-  for (const source of [...docs]) {
-    if (
-      boardType(source.type) ||
-      (!source.scene && !source.files && !source.view)
-    )
-      continue;
-    const board = {
-      id: crypto.randomUUID(),
-      title: source.title + " · 草图",
-      type: "原型画布",
-      parent: source.id,
-      html: "",
-    };
-    for (const prop of ["scene", "files", "view"]) {
-      if (prop in source) {
-        board[prop] = source[prop];
-        delete source[prop];
-      }
-    }
-    docs.push(board);
-    migrated = true;
-  }
-  for (const folder of folders)
-    if (folder.type !== "文件夹") {
-      folder.type = "文件夹";
-      migrated = true;
-    }
-  for (const d of [...docs]) {
-    if (d.outputs) {
-      d.lastOutputVersion = lastVersion(d);
-      for (const out of d.outputs) docs.push(...generatedFiles(d, out));
-      delete d.outputs;
-      migrated = true;
-    }
-    if (d.detachedSource) {
-      docs.splice(docs.indexOf(d), 1);
-      migrated = true;
-      continue;
-    }
-    const type = boardType(d.type)
-      ? "画布"
-      : d.type === "交互 HTML"
-        ? d.type
-        : "文档";
-    if (type !== d.type) {
-      d.type = type;
-      migrated = true;
-    }
-  }
-  return migrated;
-}
 let completionEnabled = true;
 const completion = documentCompletion({
   getEditor: () => editor,
@@ -851,52 +719,6 @@ const completion = documentCompletion({
   scrollport: $("paperScroll"),
 });
 const hideSuggestion = completion.clear;
-async function addImage(file) {
-  const target = doc,
-    view = editor.view;
-  let bookmark = editor.state.selection.getBookmark();
-  const track = ({ transaction }) => {
-    bookmark = bookmark.map(transaction.mapping);
-  };
-  editor.on("transaction", track);
-  try {
-    const src = await readDocumentImage(file);
-    const image = new window.Image();
-    image.src = src;
-    await image.decode();
-    if (doc !== target || page !== "work") return;
-    const selection = bookmark.resolve(editor.state.doc);
-    const dom = view.domAtPos(selection.from).node;
-    const cell = (dom.nodeType === 1 ? dom : dom.parentElement)?.closest(
-      "td,th",
-    );
-    const width = cell
-      ? Math.max(1, Math.min(image.naturalWidth, cell.clientWidth - 20))
-      : null;
-    const attrs = { src, alt: file.name || "文档图片" };
-    if (width)
-      Object.assign(attrs, {
-        width,
-        height: Math.max(
-          1,
-          Math.round((width * image.naturalHeight) / image.naturalWidth),
-        ),
-      });
-    editor
-      .chain()
-      .focus()
-      .command(({ tr }) => {
-        closeHistory(tr).setSelection(selection);
-        return true;
-      })
-      .setImage(attrs)
-      .run();
-  } catch (error) {
-    toast(error.message);
-  } finally {
-    editor.off("transaction", track);
-  }
-}
 function documentBody(html) {
   const body = new DOMParser().parseFromString(html, "text/html").body;
   body.querySelectorAll("style,script,noscript").forEach((el) => el.remove());
@@ -907,54 +729,6 @@ function documentBody(html) {
     DOMSerializer.fromSchema(editor.schema).serializeFragment(parsed.content),
   );
   return wrapper.innerHTML;
-}
-function markdownHTML(text) {
-  const node = editor.schema.nodeFromJSON(editor.markdown.parse(text));
-  const container = document.createElement("div");
-  container.append(
-    DOMSerializer.fromSchema(editor.schema).serializeFragment(node.content),
-  );
-  return container.innerHTML;
-}
-function renderChatMarkdown(reply, value) {
-  try {
-    reply.innerHTML = DOMPurify.sanitize(markdownHTML(value), {
-      ALLOWED_TAGS: [
-        "p",
-        "br",
-        "strong",
-        "em",
-        "s",
-        "blockquote",
-        "ul",
-        "ol",
-        "li",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "pre",
-        "code",
-        "table",
-        "thead",
-        "tbody",
-        "tr",
-        "th",
-        "td",
-        "hr",
-        "a",
-      ],
-      ALLOWED_ATTR: ["href", "start"],
-    });
-    for (const a of reply.querySelectorAll("a")) {
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-    }
-  } catch {
-    reply.textContent = value;
-  }
 }
 function selectChat(file, session) {
   file.selectedChat = session.id;
@@ -1039,13 +813,13 @@ function mountQuestionEditor(box, session, message) {
     e.preventDefault();
     if (!input.value.trim()) return;
     edits.delete(session);
-    ask(input.value.trim(), index, message.refsUsed || []);
+    ask(input.value, index, message.refsUsed || []);
   };
   form.append(input, note, cancel, send);
   box.replaceChildren(form);
 }
 function openChatHistory() {
-  const file = chatTarget();
+  const file = doc;
   const entries = sessions(file).map(session => ({ file, session }));
   entries.sort((a, b) => b.session.updatedAt - a.session.updatedAt);
   const list = $("historyList");
@@ -1075,101 +849,6 @@ function openChatHistory() {
   }
   $("historyDialog").showModal();
 }
-async function openAgentSettings() {
-  try {
-    const catalog = online
-      ? await api("agent-catalog")
-      : {
-          tools: Object.entries(toolDescriptions).map(
-            ([name, description]) => ({ name, description }),
-          ),
-          skills: [],
-        };
-    $("importSkill").hidden = !online;
-    $("skillStatus").textContent = (catalog.warnings || []).join("；");
-    $("importSkill").onclick = () => $("skillFolder").click();
-    $("skillFolder").onchange = async (event) => {
-      const files = Array.from(event.target.files).filter(
-        (f) => !f.webkitRelativePath.split("/").some((s) => s.startsWith(".")),
-      );
-      event.target.value = "";
-      if (!files.length) return;
-      const name = files[0].webkitRelativePath.split("/")[0];
-      try {
-        const payload = [];
-        for (const file of files) {
-          const data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(",")[1]);
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          });
-          payload.push({
-            path: file.webkitRelativePath.slice(name.length + 1),
-            data,
-          });
-        }
-        await api("skills/import", { name, files: payload });
-        await openAgentSettings();
-        toast("已安装技能 " + name);
-      } catch (error) {
-        $("skillStatus").textContent = error.message;
-      }
-    };
-    for (const [id, items] of [
-      ["agentToolList", catalog.tools],
-      ["agentSkillList", catalog.skills],
-    ]) {
-      const list = $(id);
-      list.replaceChildren();
-      const rows = id === "agentToolList"
-        ? Object.entries(toolGroups).flatMap(([group, names]) => names.map(name => ({ ...items.find(i => i.name === name), group })).filter(i => i.name))
-        : items;
-      let lastGroup;
-      for (const item of rows) {
-        if (item.group && item.group !== lastGroup) {
-          const label = document.createElement("dt");
-          label.className = "toolGroup";
-          label.textContent = lastGroup = item.group;
-          list.append(label);
-        }
-        const name = document.createElement("dt"),
-          detail = document.createElement("dd");
-        name.textContent = item.title
-          ? item.title + " · " + item.name
-          : item.name;
-        detail.textContent = item.description;
-        if (id === "agentSkillList" && online) {
-          const actions = document.createElement("span");
-          actions.className = "skillActions";
-          const download = document.createElement("a");
-          download.href =
-            "./api/skills/export?name=" + encodeURIComponent(item.name);
-          download.download = item.name + ".zip";
-          download.textContent = "导出";
-          const remove = document.createElement("button");
-          remove.type = "button";
-          remove.textContent = "删除";
-          remove.setAttribute("aria-label", "删除技能 " + item.name);
-          remove.onclick = () => confirmDelete("删除技能「" + item.name + "」？之后可以重新导入。", async () => {
-            try {
-              await api("skills/delete", { name: item.name });
-              await openAgentSettings();
-              toast("已删除技能 " + item.name);
-            } catch (error) {
-              $("skillStatus").textContent = error.message;
-            }
-          });
-          actions.append(download, remove);
-          name.append(actions);
-        }
-        list.append(name, detail);
-      }
-    }
-  } catch (e) {
-    toast(e.message);
-  }
-}
 function updateChatProgress(pending) {
   const panel = pending.panel;
   if (!panel?.isConnected) return;
@@ -1186,12 +865,16 @@ function updateChatProgress(pending) {
 }
 const transcripts = new WeakMap();
 function loadTranscript(file, session) {
+  const initial = !transcripts.has(session);
   const state = { turns: transcripts.get(session)?.turns || [] };
   transcripts.set(session, state);
   state.promise = flush().then(() => readTurns(file, session))
     .then((turns) => {
       if (transcripts.get(session) !== state) return;
       state.turns = turns;
+      state.loaded = true;
+      if (initial && !sending.has(session) && turns.some(t => t.control === "paused"))
+        queueState(session).stopped = true;
       if (
         doc === file &&
         selectedSession(file) === session &&
@@ -1207,7 +890,7 @@ function loadTranscript(file, session) {
 function chat(focusIndex) {
   const area = $("conversation");
   area.replaceChildren();
-  const file = chatTarget(),
+  const file = doc,
     session = selectedSession(file);
   const pending = sending.get(session);
   const messages = session.messages.slice(
@@ -1266,7 +949,7 @@ function chat(focusIndex) {
       '<div class="chatWelcome">' +
       icon("chat") +
       "<h2>写作助手</h2><p>从「" +
-      esc(fileTitle()) +
+      esc(file.title) +
       "」开始</p></div>";
     for (const [name, ico] of page === "boardPage"
       ? [
@@ -1302,7 +985,7 @@ function chat(focusIndex) {
     question.className = "userTurn";
     const body = document.createElement("div");
     body.className = "agentReply questionBody";
-    renderChatMarkdown(body, m.q || "");
+    renderChatMarkdown(editor, body, m.q || "");
     question.append(body);
     block.append(question);
     if (!pending && !m.failure && !m.control) {
@@ -1371,15 +1054,16 @@ function chat(focusIndex) {
       if (m.control) {
         const status = document.createElement("small");
         status.textContent =
+          m.control === "ready" ? "结果已生成" :
           m.control === "followed" || pending?.resumeFrom === m.requestId
             ? "已接续到后续请求"
             : "已暂停";
         block.append(status);
-        if (m.control === "paused" && !pending) {
+        if (["paused", "ready"].includes(m.control) && !pending) {
           const resume = document.createElement("button");
           resume.type = "button";
           resume.className = "requestControl";
-          resume.textContent = "继续";
+          resume.textContent = m.control === "ready" ? "取回结果" : "继续";
           resume.onclick = () => ask(m.q, m.editIndex, m.refsUsed || [], m);
           question.append(resume);
         }
@@ -1401,7 +1085,7 @@ function chat(focusIndex) {
       }
       const reply = document.createElement("div");
       reply.className = "agentReply";
-      renderChatMarkdown(reply, m.answer || "");
+      renderChatMarkdown(editor, reply, m.answer || "");
       block.append(reply);
       const actions = document.createElement("div");
       actions.className = "replyActions";
@@ -1475,7 +1159,7 @@ function chat(focusIndex) {
   if (messages.length) area.scrollTop = area.scrollHeight;
 }
 function refreshChat(file, session) {
-  if (chatTarget() === file && selectedSession(file) === session) chat();
+  if (doc === file && selectedSession(file) === session) chat();
 }
 function hasProposal(file, messages) {
   return [...messages, ...(file.externalReviews || [])]
@@ -1508,6 +1192,8 @@ async function prioritize(file, session, item) {
 }
 function drainQueue(file, session) {
   const state = queueState(session);
+  const transcript = transcripts.get(session);
+  if (!transcript?.loaded || transcript.turns.some(t => t.control === "ready")) return;
   if (sending.has(session) || state.loading || state.promoting || state.stopped ||
       !state.items.length || hasProposal(file, session.messages) || (!docs.includes(file) && !folders.includes(file))) return;
   const item = state.items[0];
@@ -1516,7 +1202,7 @@ function drainQueue(file, session) {
 async function ask(q, editIndex, editRefs, resume) {
   if (!doc || !q.trim()) return;
   editComposer?.();
-  const file = chatTarget(), session = selectedSession(file);
+  const file = doc, session = selectedSession(file);
   if (pendingUploads.get(session)) return toast("附件解析完成后即可发送");
   if (!online || editIndex !== undefined || resume) {
     if (sending.has(session)) return;
@@ -1550,7 +1236,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
   if (boardType(owner.type) && !online)
     return toast("画布助手需要登录服务版工作台");
   const modelId = queued?.modelId || selectedModel("agent");
-  const target = owner, base = targetContent(target);
+  const base = owner.html;
   const pausedTurn = transcripts
     .get(session)
     ?.turns.findLast((t) => t.control === "paused");
@@ -1672,8 +1358,9 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
         msg.refs = archiveDelivery(owner, r.delivery).map((c) => c.id);
       finish();
       if (r.delivery) {
-        if (folders.includes(doc)) openDoc(doc);
-        tree();
+        if (folders.includes(doc) || r.delivery.changes?.some(change => change.id === doc?.id))
+          openDoc(doc);
+        else tree();
         await flush();
       }
     } catch (e) {
@@ -1740,171 +1427,22 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
   finish();
   chat();
 }
-async function shareFile() {
-  if (!online) return toast("请在登录版工作台分享文件");
-  const ref = doc.origin || { doc: doc.id, file: "document" };
-  const title = doc.title;
-  const button = $("share");
-  button.disabled = true;
-  try {
-    await flush();
-    let state = await api("share", { ...ref, lookup: true });
-    dialog("分享「" + title + "」",
-      '<label class="shareSetting"><span>开启链接分享</span><input type="checkbox" role="switch" id="shareEnabled"></label><input aria-label="分享链接" id="fileShareUrl" readonly>',
-      () => {
-        navigator.clipboard.writeText(state.url).then(() => toast("链接已复制"))
-          .catch(() => { $("fileShareUrl").select(); toast("请复制选中的链接"); });
-        return false;
-      }, "复制链接");
-    const toggle = $("shareEnabled"), link = $("fileShareUrl");
-    const refresh = () => {
-      toggle.checked = state.enabled;
-      link.hidden = $("submit").hidden = !state.enabled;
-      link.value = state.url || "";
-    };
-    refresh();
-    $("cancel").textContent = "关闭";
-    toggle.onchange = async () => {
-      toggle.disabled = true;
-      try { state = await api("share", { ...ref, enabled: toggle.checked }); }
-      catch (error) { toast(error.message); }
-      finally {
-        toggle.disabled = false;
-        if (toggle.isConnected) refresh();
-      }
-    };
-  } catch (error) {
-    toast(error.message);
-  } finally {
-    button.disabled = false;
-  }
-}
-function archiveWorkspaceFiles(output) {
-  const all = new Map([...docs, ...folders].map((f) => [f.id, f]));
-  const added = output.files
-    .filter((f) => !all.has(f.id))
-    .map(({ drawing, ...f }) => {
-      if (boardType(f.type))
-        f.scene = drawing ? proposedScene([], drawing) : [];
-      else if (f.type === "交互 HTML") f.html ??= emptyHtml(f.title);
-      else if (f.type === "文档") f.html = documentBody(f.html || "<p></p>");
-      return f;
-    });
-  const changes = output.changes.filter(
-    (c) => all.get(c.id)?.workspaceChangeRun !== output.runId,
-  );
-  const projected = new Map(all);
-  for (const f of added) projected.set(f.id, f);
-  for (const c of changes) {
-    const f = all.get(c.id);
-    if (
-      !f ||
-      f.title !== c.base.title ||
-      (f.parent || "") !== c.base.parent ||
-      (c.base.html !== undefined && (f.html || "") !== c.base.html) ||
-      (c.base.scene !== undefined && sceneVersion(f.scene) !== c.base.scene)
-    )
-      throw Error("目标文件在任务期间已变更，请刷新并核对：" + c.base.title);
-    projected.set(c.id, {
-      ...f,
-      ...(c.title !== undefined && { title: c.title }),
-      ...(c.parent !== undefined && { parent: c.parent }),
-    });
-  }
-  for (const id of [...added.map((f) => f.id), ...changes.map((c) => c.id)]) {
-    const f = projected.get(id);
-    if (
-      [...projected.values()].some(
-        (p) =>
-          p.id !== id &&
-          (p.parent || "") === (f.parent || "") &&
-          p.title === f.title,
-      )
-    )
-      throw Error("目标位置有同名文件：" + f.title);
-    const seen = new Set([id]);
-    let parent = f.parent;
-    while (parent) {
-      if (!projected.has(parent) || seen.has(parent))
-        throw Error("目标父文件已变更：" + f.title);
-      seen.add(parent);
-      parent = projected.get(parent).parent;
-    }
-  }
-  for (const f of added) (f.type === "文件夹" ? folders : docs).push(f);
-  for (const c of changes) {
-    const f = all.get(c.id);
-    if (c.title !== undefined) f.title = c.title;
-    if (c.parent !== undefined) f.parent = c.parent;
-    if (c.html !== undefined || c.drawing) {
-      (f.externalReviews ||= []).push({
-        ...(c.html !== undefined && { proposed: c.html, base: f.html }),
-        ...(c.drawing && { canvasPatch: c.drawing, canvasBase: c.base.scene }),
-      });
-    }
-    f.workspaceChangeRun = output.runId;
-  }
-  const result = [
-    ...output.files.map((f) => f.id),
-    ...output.changes.map((c) => c.id),
-  ]
-    .map((id) => directory().entries.get(id)?.item)
-    .filter(Boolean);
-  for (const f of result) reveal(f.parent);
+function archiveDelivery(owner, output, title = owner.title) {
+  const files = applyDelivery(docs, folders, owner, output, title, documentBody);
+  for (const file of files) reveal(file.parent);
   changed();
-  return result;
-}
-function archiveDelivery(d, output, title = d.title) {
-  if (Array.isArray(output.files)) return archiveWorkspaceFiles(output);
-  const existing =
-    output.runId && docs.filter((f) => f.origin?.runId === output.runId);
-  if (
-    existing?.length &&
-    ["prd", "html"].every(
-      (k) => !output[k] || existing.some((f) => f.origin.file === k),
-    )
-  )
-    return existing;
-  const version = lastVersion(d) + 1,
-    suffix = version > 1 ? " · v" + version : "";
-  const children = generatedFiles(d, {
-    ...output,
-    version,
-    fileNames: {
-      prd: title + " · 图文 PRD" + suffix,
-      html: title + " · 交互 HTML" + suffix,
-    },
-  });
-  if (output.prd)
-    children.find((c) => c.type === "文档").html = documentBody(output.prd);
-  if (output.runId)
-    for (const child of children) child.origin.runId = output.runId;
-  docs.push(...children);
-  d.lastOutputVersion = version;
-  reveal(d.id);
-  changed();
-  return children;
+  return files;
 }
 async function setup() {
   decorate();
-  const img = await sceneImage(demoScene(), {}, "#f0eef8");
-  docs[0].html =
-    '<h2>需求背景</h2><p>客户反馈分散在访谈记录和评审备忘中。产品经理需要一个统一的反馈池，按标题检索、按处理状态筛选，在评审时快速定位原始问题。</p><h2>页面草图</h2><img src="' +
-    img +
-    '" alt="反馈池列表与交互备注"><h2>交互与字段</h2><p>标题支持关键词匹配；状态为单选，默认全部。状态枚举：待评估、已采纳、暂缓。点击行展开该条反馈的详情。</p><p>反馈标题（文本）：该条反馈的简短描述。状态（枚举）：产品经理对反馈的处理结论。来源（文本）：记录该反馈的渠道。</p><table><tr><th>反馈标题</th><th>状态</th><th>来源</th></tr><tr><td>希望支持批量归档</td><td>待评估</td><td>客户访谈</td></tr><tr><td>补充快捷键说明</td><td>已采纳</td><td>评审备忘</td></tr><tr><td>列表支持自定义列</td><td>暂缓</td><td>客户访谈</td></tr><tr><td>搜索保留最近条件</td><td>待评估</td><td>产品体验</td></tr></table>';
-  docs[0].scene = demoScene();
-  const saved = await boot(snapshot,setModels);
-  if (saved) {
-    folders.splice(0, folders.length, ...saved.folders);
-    docs.splice(0, docs.length, ...saved.docs);
-    completionEnabled = saved.completionEnabled !== false;
-    if (migrateDirectory()) changed();
-    doc = firstDocument();
-  } else {
-    migrateDirectory();
-    changed();
-    await flush();
-  }
+  const saved = await boot(snapshot, setModels);
+  const initial = saved || await exampleWorkspace();
+  folders.push(...initial.folders);
+  docs.push(...initial.docs);
+  completionEnabled = initial.completionEnabled !== false;
+  if (!saved || migrateDirectory(docs, folders)) changed();
+  if (!saved) await flush();
+  doc = saved ? firstDocument() : docs[0];
   if (!online)
     completionEnabled = localStorage.getItem("xuye.completion") !== "off";
   const completionButton = $("completionToggle");
@@ -1923,88 +1461,24 @@ async function setup() {
       localStorage.setItem("xuye.completion", completionEnabled ? "on" : "off");
     changed();
   };
-  editor = new Editor({
-    element: $("editor"),
-    extensions: [
-      StarterKit.configure({ link: { openOnClick: false } }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      TableKit.configure({ table: { resizable: true } }),
-      DocumentImage.configure({
-        allowBase64: true,
-        resize: {
-          enabled: true,
-          minWidth: 32,
-          minHeight: 24,
-          directions: ["bottom-right", "right", "bottom"],
-          alwaysPreserveAspectRatio: false,
-        },
-      }),
-      Markdown,
-    ],
-    editorProps: {
-      attributes: { "aria-label": "文档正文" },
-      handlePaste: (_, e) => {
-        const file = [...e.clipboardData.files].find((f) =>
-          f.type.startsWith("image/"),
-        );
-        if (file) {
-          addImage(file);
-          return true;
-        }
-        return false;
-      },
-      handleKeyDown: (view, e) => {
-        if (
-          !e.isComposing &&
-          !e.altKey &&
-          (e.ctrlKey || e.metaKey) &&
-          e.key.toLowerCase() === "z"
-        ) {
-          e.preventDefault();
-          return e.shiftKey ? editor.commands.redo() : editor.commands.undo();
-        }
-        const selection = view.state.selection;
-        if (
-          !e.isComposing &&
-          ["Backspace", "Delete"].includes(e.key) &&
-          selection instanceof NodeSelection &&
-          selection.node.type.name === "image" &&
-          !view.dom.querySelector(".marqueeSelected")
-        ) {
-          view.dispatch(
-            closeHistory(view.state.tr).deleteSelection().scrollIntoView(),
-          );
-          return true;
-        }
-        return completion.handleKey(view, e);
-      },
-    },
-    onUpdate: () => {
+  editor = createDocumentEditor({
+    completion,
+    getFile: () => page === "work" ? doc : null,
+    quoteSelection,
+    onChange(currentEditor) {
       if (doc?.type !== "文档") return;
-      doc.html = editor.getHTML();
+      doc.html = currentEditor.getHTML();
       changed();
       reviewDraft();
       header();
       completion.request();
     },
-    onBlur: hideSuggestion,
   });
-  editComposer = installComposer(renderChatMarkdown);
-  installBlockTools(editor, () => $("file").click(), quoteSelection);
+  editComposer = installComposer((element, text) => renderChatMarkdown(editor, element, text), ask);
   $("htmlInput").addEventListener("select", refreshSourceQuote);
   $("htmlInput").addEventListener("selectionchange", refreshSourceQuote);
   $("quoteSource").onmousedown = e => e.preventDefault();
   $("quoteSource").onclick = () => quoteSelection();
-  installDocumentOutline(editor.view.dom);
-  editor.view.dom.addEventListener("compositionstart", () => {
-    completion.composition(true);
-  });
-  editor.view.dom.addEventListener("compositionend", () => {
-    completion.composition(false);
-  });
-  editor.view.dom.addEventListener("pointerdown", hideSuggestion);
-  $("paperScroll").addEventListener("scroll", completion.reposition, { passive: true });
   writeSource = installHtmlSource((value) => {
     if (doc?.type !== "交互 HTML") return;
     doc.html = value;
@@ -2029,74 +1503,16 @@ async function setup() {
   $("title").onblur = () => ($("title").value = doc.title);
   $("newDoc").onclick = $("emptyNewDoc").onclick = () => create();
   $("serverLink").hidden = online;
-  const reviewStyle = document.createElement("style");
-  reviewStyle.textContent = deltaStyle;
-  document.head.append(reviewStyle);
   installLayout();
   initModels(hideSuggestion);
-  editor.view.dom.addEventListener("dragstart", (e) => {
-    const sel = editor.state.selection;
-    const text = editor.state.doc.textBetween(sel.from, sel.to, "\n");
-    if (text)
-      e.dataTransfer.setData(
-        "application/x-xuye-selection",
-        JSON.stringify({ title: doc.title, id: doc.id, text }),
-      );
+  installReferenceInput({
+    editor, getFile: () => doc, quoteSelection, attachFile, uploadFiles,
+    attachText(text) {
+      quoted.push({ kind: "selection", title: "外部文本", text: text.slice(0, 12000) });
+      renderQuotes();
+      $("question").focus();
+    },
   });
-  const agent = $("agent");
-  const selectionType = "application/x-xuye-selection";
-  const accepts = (transfer) =>
-    [contextTransfer, selectionType, "text/plain", "Files"].some((type) =>
-      transfer.types.includes(type),
-    );
-  agent.ondragover = (e) => {
-    if (!accepts(e.dataTransfer)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    agent.classList.add("accept-context");
-  };
-  agent.ondragleave = (e) => {
-    if (!agent.contains(e.relatedTarget))
-      agent.classList.remove("accept-context");
-  };
-  document.addEventListener("dragend", () =>
-    agent.classList.remove("accept-context"),
-  );
-  agent.ondrop = (e) => {
-    agent.classList.remove("accept-context");
-    if (!accepts(e.dataTransfer)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.files.length) {
-      uploadFiles(Array.from(e.dataTransfer.files));
-      return;
-    }
-    let ref;
-    try {
-      if (e.dataTransfer.types.includes(contextTransfer)) {
-        const data = JSON.parse(e.dataTransfer.getData(contextTransfer));
-        attachFile(data);
-        return;
-      } else if (e.dataTransfer.types.includes(selectionType)) {
-        ref = JSON.parse(e.dataTransfer.getData(selectionType));
-      } else
-        ref = { title: doc.title, text: e.dataTransfer.getData("text/plain") };
-    } catch {
-      return;
-    }
-    if (ref.kind !== "file") {
-      if (!ref.text?.trim()) return;
-      ref = {
-        kind: "selection",
-        title: ref.title,
-        id: ref.id,
-        text: ref.text.slice(0, 12000),
-      };
-    }
-    quoted.push(ref);
-    renderQuotes();
-    $("question").focus();
-  };
 
   $("icons").onclick = () =>
     dialog(
@@ -2109,7 +1525,7 @@ async function setup() {
     try {
       const src = await currentImage();
       const choices = docs.filter(
-        (d) => !d.detachedSource && d.type === "文档",
+        (d) => d.type === "文档",
       );
       if (!choices.length) return toast("请先在目录中新建文档");
       const ancestor = directory()
@@ -2165,24 +1581,7 @@ async function setup() {
       toast("未能复制，请使用「插入到文档」");
     }
   };
-  const settingsDialog = $("settingsDialog");
-  function settingsPane(pane) {
-    for (const b of settingsDialog.querySelectorAll("[data-pane]")) {
-      $(b.dataset.pane).hidden = b.dataset.pane !== pane;
-      b.setAttribute("aria-pressed", String(b.dataset.pane === pane));
-    }
-    if (pane === "agentPage") openAgentSettings();
-  }
-  settingsDialog
-    .querySelector(".settingsTabs")
-    .addEventListener("click", (e) => {
-      if (e.target.dataset.pane) settingsPane(e.target.dataset.pane);
-    });
-  $("workspaceSettings").onclick = () => {
-    settingsDialog.showModal();
-    settingsPane("agentPage");
-  };
-  $("closeSettings").onclick = () => settingsDialog.close();
+  installWorkspaceSettings();
   $("assistantToggle").onclick = () => {
     openAgent = !openAgent;
     header();
@@ -2192,38 +1591,8 @@ async function setup() {
     header();
   };
 
-  $("question").addEventListener("paste", (event) => {
-    const data = event.clipboardData;
-    if (!data) return;
-    const images = Array.from(data.files).filter((file) =>
-      file.type.startsWith("image/"),
-    );
-    if (!images.length) {
-      for (const item of data.items) {
-        if (item.kind === "file" && item.type.startsWith("image/")) {
-          const file = item.getAsFile();
-          if (file) images.push(file);
-        }
-      }
-    }
-    if (!images.length) return;
-    // Keep the browser's normal text insertion for mixed text-and-image clips.
-    if (!data.getData("text/plain")) event.preventDefault();
-    uploadFiles(images);
-  });
-  $("question").onkeydown = (e) => {
-    if (
-      e.key === "Enter" &&
-      !e.shiftKey &&
-      !e.isComposing &&
-      e.keyCode !== 229
-    ) {
-      e.preventDefault();
-      $("askForm").requestSubmit();
-    }
-  };
   $("newChat").onclick = () => {
-    const file = chatTarget();
+    const file = doc;
     const session = {
       id: crypto.randomUUID(),
       messages: [],
@@ -2236,24 +1605,6 @@ async function setup() {
   $("chatHistory").onclick = openChatHistory;
   $("closeHistory").onclick = () => $("historyDialog").close();
 
-  $("attachContext").onclick = () => {
-    if (online) $("chatFiles").click();
-    else toast("请在登录版写作助手中上传附件");
-  };
-  $("chatFiles").onchange = (event) => {
-    const files = Array.from(event.target.files);
-    event.target.value = "";
-    uploadFiles(files);
-  };
-  $("askForm").onsubmit = (e) => {
-    e.preventDefault();
-    ask($("question").value.trim());
-  };
-  editor.on("selectionUpdate", completion.selectionChanged);
-  $("file").onchange = (e) => {
-    addImage(e.target.files[0]);
-    e.target.value = "";
-  };
   $("generationRuns").onclick = () => {
     const file = doc;
     openGenerationLog(file, async (output) => {
@@ -2265,42 +1616,7 @@ async function setup() {
       toast("已恢复到指定位置");
     });
   };
-  $("share").onclick = shareFile;
-}
-async function publicBoard() {
-  const endpoint = "../api/public/" + location.pathname.split("/").pop();
-  const title = document.createElement("h1"),
-    mount = document.createElement("div");
-  mount.style.cssText = "height:calc(100dvh - 50px);width:100%";
-  title.style.cssText = "font-size:18px;padding:10px 20px;margin:0";
-  document.body.replaceChildren(title, mount);
-  let revision,
-    seq = 0;
-  const stream = new EventSource(endpoint + "/events");
-  async function refresh() {
-    const id = ++seq;
-    try {
-      const response = await fetch(endpoint);
-      if (id !== seq) return;
-      if (!response.ok) {
-        if (response.status === 404) {
-          stream.close();
-          unmountBoard();
-          title.textContent = "分享链接不可用";
-        }
-        return;
-      }
-      const file = await response.json();
-      if (id !== seq || revision === file.revision) return;
-      revision = file.revision;
-      title.textContent = document.title = file.title;
-      mountBoard(file, mount, null, file.scene);
-    } catch {
-      title.textContent = "暂时无法读取画布";
-    }
-  }
-  stream.onopen = stream.onmessage = refresh;
-  await refresh();
+  $("share").onclick = () => shareFile(doc);
 }
 (/\/s\/[^/]+$/.test(location.pathname) ? publicBoard() : setup()).catch((e) => {
   console.error(e);

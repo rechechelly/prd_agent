@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { fault } from "../storage.mjs";
 import { maskImages } from "./context.mjs";
+import { editOnlineFileBody } from "../../shared/online-file-edit.mjs";
 
 // Boundaries are immutable during one submission. A changed or stale range must never
 // fall back to searching the file for the same words.
@@ -36,7 +37,9 @@ export function selectionScope(refs, ownerId, doc) {
         else if (JSON.stringify(tags) !== JSON.stringify(after))
           throw Error("请保留选区片段中的全部 HTML 标签和顺序，仅修改文字。");
       }
-      return prefix.html + replacement + suffix;
+      return editOnlineFileBody(ownerId, html, {
+        range: { fileId: id, from: prefix.html.length, to: html.length - suffix.length }, content: replacement,
+      });
     },
   };
 }

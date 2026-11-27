@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { db } from "../storage.mjs";
+import { createHash, randomUUID } from "node:crypto";
+import { db, transaction } from "../storage.mjs";
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS generation_runs (
@@ -14,27 +14,21 @@ UPDATE generation_runs SET record=json_set(record, '$.status', 'interrupted')
 WHERE json_extract(record, '$.status')='running';
 `);
 
-const write = db.prepare("INSERT INTO generation_runs VALUES (?, ?, ?, ?)");
-const update = db.prepare("UPDATE generation_runs SET record=? WHERE id=?");
-
-export function startGeneration(doc) {
-  const id = randomUUID();
-  const started = Date.now();
-  const record = {
-    id,
-    started,
-    stage: "model_config",
-    status: "running",
-    tools: [],
-  };
-  write.run(id, doc, started, JSON.stringify(record));
-  return {
-    record,
-    recordEvent(values) {
-      Object.assign(record, values);
-      update.run(JSON.stringify(record), id);
-    },
-  };
+// Retrying delivery of a settled Pi submission must not create another review.
+export function recordWorkspaceFiles(owner, files, changes, question, chatId, conversationId, receipt) {
+  const id = receipt == null ? randomUUID() : createHash("sha256")
+    .update(JSON.stringify([owner, chatId || "legacy", conversationId, receipt]))
+    .digest("hex");
+  return transaction(() => {
+    if (db.prepare("SELECT 1 FROM generation_runs WHERE id=?").get(id))
+      return pendingDelivery(id, owner);
+    const now = Date.now();
+    const record = { id, started: now, finished: now, stage: "delivery", status: "done", tools: [] };
+    const output = { files, changes, question };
+    db.prepare("INSERT INTO generation_runs VALUES(?,?,?,?)").run(id, owner, now, JSON.stringify(record));
+    db.prepare("INSERT INTO pending_deliveries VALUES(?,?,?)").run(id, owner, JSON.stringify(output));
+    return { ...output, runId: id };
+  });
 }
 
 export function generationRuns(doc) {
@@ -50,13 +44,6 @@ export function generationRuns(doc) {
     }));
 }
 
-export function retainDelivery(id, doc, pair) {
-  db.prepare("INSERT INTO pending_deliveries VALUES(?,?,?)").run(
-    id,
-    doc,
-    JSON.stringify(pair),
-  );
-}
 export function pendingDelivery(id, doc) {
   const row = db
     .prepare("SELECT content FROM pending_deliveries WHERE run=? AND doc=?")

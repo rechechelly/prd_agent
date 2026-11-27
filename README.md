@@ -2,6 +2,12 @@
 
 叙页是给产品经理使用的单人在线工作台。把需求文档、交互 HTML、原型画布放在同一棵文件树里，在任一文件中打开 Agent 对话，就可以围绕当前内容提问、跨文件修改，或创建一组新的交付物。Agent 基于 Pi Durable，文档使用 Tiptap，画布使用 Excalidraw。
 
+在「客户反馈池」这类需求文档中，可以选中一句指标口径，问 Agent 怎么写得更清楚。采纳修改后，同一工作区里的 HTML 原型仍可单独演示，分享开关控制外部读者能否打开链接。
+
+![文档工作区，左侧为章节目录，右侧为带选区引用的写作对话](public/readme/document.webp)
+
+![单文件 HTML 原型的渲染模式，包含日期筛选、指标和趋势图](public/readme/prototype.webp)
+
 ## 本地启动
 
 使用 Node.js 24 和 npm。在仓库根目录执行：
@@ -33,22 +39,23 @@ npm start
 - **文档**支持图文、表格、标题目录、行级工具栏、划词与框选格式化。打开 AI 补全后，输入会触发 Markdown 续写建议。快速连按两次 Tab 可在光标处立即生成或换一版，单按 Tab 采纳，Esc 关闭。标题、列表和代码块按文档格式插入。
 - **HTML** 是单文件原型。Raw Text 编辑源码并展示 Agent 提议的差异，渲染模式预览修改效果。可以逐处保留或放弃修改。
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
-- **Agent 对话**默认携带当前文件上下文，可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
-- **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击「针对选区提问」，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
+- **Agent 对话**默认携带当前文件上下文。“给这个页面加字段”“继续写这一节”等请求优先在当前文件上提出修改。需要独立交付时，可以明确要求创建新的 PRD、HTML 或画布。对话可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
+- **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击「问 Agent」，或将选区拖入助手，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
 - **会话**归属于发起对话的文件。同一文件可以开多个会话；从 A 修改 B 时，在 B 中审阅修改，执行记录留在 A。输入框上边缘可拖动调高，输入 Markdown 后可点击「预览」。
 - **分享**通过「分享」中的开关控制。关闭立即撤销链接访问，重新开启可继续使用原链接。
 - **技能**在「工作区设置 → Agent 工具与技能」管理。仓库附带可替换的 `prd-writing` 技能，指导 Agent 交付可交互 HTML 和图文 PRD。用户可导入其他技能包。
 
 ## 代码结构和二次开发
 
-前端从 `src/main.js` 启动。文档编辑与补全在 `src/editor/`，对话在 `src/chat/`，文件目录、画布和供应商界面在 `src/workspace/`，分享评审在 `src/review/`。前后端共用的文件类型、引用和画布模型在 `shared/`。
+前端从 `src/main.js` 启动。文档编辑与补全在 `src/editor/`，对话在 `src/chat/`，文件目录、画布和供应商界面在 `src/workspace/`，分享评审在 `src/review/`。工作区示例、旧数据迁移、交付文件归档分别放在 `src/workspace/example.js`、`migration.js` 和 `deliveries.js`。前后端共用的范围编辑、文件类型、引用和画布模型在 `shared/`。
 
-服务端从 `server/index.mjs` 启动。Agent 循环、队列和历史在 `server/agent/`，模型请求在 `server/models/`，文件生成和修改在 `server/workspace/`，附件解析在 `server/attachments/`，任务环境和网络代理在 `server/runtime/`。
+服务端从 `server/index.mjs` 启动。Agent 循环、队列和历史在 `server/agent/`，分享与撤销在 `server/sharing/`，模型请求在 `server/models/`，文件生成和修改在 `server/workspace/`，附件解析在 `server/attachments/`，任务环境和网络代理在 `server/runtime/`。
 
 | 需要修改的行为 | 入口 |
 | --- | --- |
 | Agent 系统指令、文件上下文、用户消息、错误纠正和截断续写提示 | [server/agent/prompts.mjs](server/agent/prompts.mjs) 中的 `agentInstructions`、`agentInput`、`continuationInput` |
-| 文档行内补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages`，调用端在 [src/editor/document-completion.js](src/editor/document-completion.js) |
+| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标前后文、所在段落或列表的层级，以及光标是否在段末。补全可续写句子，也可另起段落、标题和有序列表。调用端在 [src/editor/document-completion.js](src/editor/document-completion.js)。 |
+| 在线正文修改 | Tab 采纳和 `edit_online_file` 共用 [shared/online-file-edit.mjs](shared/online-file-edit.mjs)。补全模型直接返回 Markdown，编辑器将候选绑定到文件 ID、文档快照和富文本光标位置，采纳时作为一次可撤销的修改写入。 |
 | 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent/run.mjs](server/agent/run.mjs) 的 `runAgent` |
 | 模型协议、上下文窗口、输出 token 和供应商适配 | [server/agent/model.mjs](server/agent/model.mjs)；普通补全和模型发现在 [server/models/client.mjs](server/models/client.mjs) |
 | 工具清单、参数与执行 | [shared/agent-catalog.mjs](shared/agent-catalog.mjs) 的描述和 [server/agent/tools.mjs](server/agent/tools.mjs) 的注册。文件与画布操作分别见 `server/workspace/create-file.mjs`、`server/workspace/canvas-tools.mjs` |
@@ -57,9 +64,21 @@ npm start
 | 会话续接、持久化记录和流式展示 | `server/agent/queue.mjs`、`src/chat/chat-queue.js`、`server/agent/conversation.mjs`、`server/agent/history.mjs`、`server/agent/stream.mjs`、`src/chat/chat-trace.js` |
 | 供应商存储、选择与管理界面 | `server/models/providers.mjs`、`server/models/routes.mjs`、`src/workspace/providers.js` |
 | HTTP 入口、登录和工作区版本 | `server/index.mjs`、`server/storage.mjs`、`src/service.js` |
-| 编辑器、HTML、画布和工作区布局 | `src/main.js`、`src/workspace/html-source.js`、`src/workspace/board.js`、`src/shell.html`、`src/style.css` |
+| 会话与目标文件的对应关系 | [server/agent/routes.mjs](server/agent/routes.mjs) 解析请求所属文件，[server/agent/history.mjs](server/agent/history.mjs) 按文件与会话定位历史；目标文件的待审修改独立归档 |
+| 分享开关与旧链接 | [src/review/file-sharing.js](src/review/file-sharing.js)、[server/sharing/files.mjs](server/sharing/files.mjs) |
+| 划词定位和写入范围 | [src/editor/selection-reference.js](src/editor/selection-reference.js) 生成原文范围，[server/agent/selection.mjs](server/agent/selection.mjs) 校验并限定写入 |
+| 编辑器、HTML、画布和工作区布局 | `src/editor/document-editor.js`、`src/workspace/html-source.js`、`src/workspace/board.js`、`src/shell.html`、`src/style.css` |
 
-**修改循环。** Pi 的 `maxTurns` 默认为 `null`，工具串行执行，启用原生重试与上下文压缩。应用另有针对错误工具结果、纯文本截断和无进展续写的限制。循环策略集中在 `loopPolicy`。一次输出被截断与上下文总窗口溢出走不同的处理路径。
+### 关键参数
+
+| 行为 | 默认值和含义 | 调整位置 |
+| --- | --- | --- |
+| Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
+| 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。工作副本连续 2 次没有进展后停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
+| Agent 模型预算 | 模型适配层声明 128,000 token 上下文窗口；`XUYE_MAX_OUTPUT_TOKENS` 默认为 32,768，可设置为 1–127,999。部署时按实际模型支持的上限配置 | `server/agent/model.mjs` |
+| 文档补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token | `src/editor/document-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
+| 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
+| 对话输入框 | 可拖动上边缘，也可聚焦边缘后按上下键，每次调整 16 px。默认高度 70 px，下限 62 px，上限取 540 px 和窗口高度 52% 中的较小值。偏好保存在浏览器的 `xuye.composerHeight` | `src/chat/composer.js` |
 
 ### 工具如何选择
 
@@ -68,18 +87,27 @@ npm start
 | 在线工作区 | `list_online_files`、`read_online_file`、`write_online_file`、`edit_online_file` | 使用在线文件 ID 或相对整个工作区根目录的路径，例如 `需求/原型`。从 A 开启会话也可以读写 B。读取和修改省略目标时定位 A；在 A 下创建子文件时指定 `parent_id` 为 A 的 ID。 |
 | 在线画布和 PRD | `draw_online_canvas`、`embed_view_screenshots` | 按在线文件定位画布，或把配套 HTML 截图嵌入指定文档。 |
 | 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 制作本地草稿，用 Bash 运行脚本或解析二进制原件。 |
-| 草稿导入 | `import_task_file_to_workspace` | 将本次任务根目录中指定的 UTF-8 草稿提交至一个在线文档或 HTML，可指定目标 ID。 |
-| 技能与会话 | `skill_load`、`install_skill`、`compact_context` | 加载技能入口、按清单安装任务内的技能包、请求 Pi 压缩上下文。 |
+| 工作台技能与会话 | `skill_load`、`compact_context` | 前者按名称加载技能入口。后者是工作台为模型提供的操作，调用 Pi 的 `Conversation.compact`。Pi 自带的阈值压缩和上下文溢出恢复也会自动运行。 |
 
-工作区使用数据库保存文件树。在线工具只在这棵树里解析名称和 ID；操作系统绝对路径和 `..` 会被拒绝。比如 `read_online_file({path:"需求/说明"})` 读取在线文件，而 `read({path:"upload-….txt"})` 读取本次任务的附件。用 `write({path:"draft.html",content:"…"})` 保存任务草稿后，用 `import_task_file_to_workspace({id:"A",source:"draft.html"})` 将其提交到在线文件 A。直接修改在线正文可用 `edit_online_file({id:"A",old_text:"原句",content:"新句"})`。
+工作区使用数据库保存文件树。在线工具只在这棵树里解析名称和 ID。比如 `read_online_file({path:"需求/说明"})` 读取在线文档，`read({path:"upload-….txt"})` 读取本次任务的附件。直接修改在线正文可用 `edit_online_file({id:"A",old_text:"原句",content:"新句"})`。长文可用同一工具的 `append` 参数分段追加，并用 `read_online_file` 核对结果。
 
-从 v1.0.3 迁移自定义技能时，请将 `read_file`、`write_file`、`edit_file`、`list_file`、`draw_canvas` 分别改为 `read_online_file`、`write_online_file`、`edit_online_file`、`list_online_files`、`draw_online_canvas`。已有会话的执行记录保留当时的工具名。
+从 v1.0.x 升级到 v2.0.0 时，如果自定义技能使用旧工具名，请将 `read_file`、`write_file`、`edit_file`、`list_file`、`draw_canvas` 分别改为 `read_online_file`、`write_online_file`、`edit_online_file`、`list_online_files`、`draw_online_canvas`。已有会话的执行记录保留当时的工具名。
 
-新增工具时，在 `shared/agent-catalog.mjs` 声明用途和分组，并在 `server/agent/tools.mjs` 注册。在线文件工具由 `server/workspace/` 实现；Pi 原生文件工具的任务路径适配在 `server/runtime/file-tools.mjs`。工具错误进入 Pi 工具结果，模型可据此修正并重试。
+新增工作台工具时，在 `shared/agent-catalog.mjs` 声明分组，在 `server/agent/tools.mjs` 注册。在线文件工具由 `server/workspace/` 实现。四个系统工具的名称、参数和描述由锁定版本的 `@earendil-works/pi-durable/tools` 提供。
+
+### Pi Durable 如何管理会话
+
+工作台为每个文件会话分配独立的 SQLite 存储。消息通过 `Conversation.submit` 提交，服务等待 `Submission.wait` 返回结果。工具的输入和返回值来自已提交的 Pi 记录，界面的实时执行提示订阅 Pi 的 `ToolTask` 钩子。工作台另外负责把用户点击 Keep 的修改应用到相应在线文件。暂停使用 `Conversation.abort`，继续使用 `type: "continue"`。
+
+输入框上方可调整顺序的待发送消息保存在应用定义的 Pi 会话文档中。排队的消息正式提交时，出队和创建 submission 使用同一笔 Pi 事务。服务还用 Pi 事务把工具结果与相应的在线文件草稿关联。若进程在工具完成后退出，重新连接原请求会取回已提交的草稿与执行记录。交付归档使用单独的工作区事务，同一个已完成答复可以安全重取。
+
+进程在工具执行中退出时，Pi 根据工具声明的 `replay` 策略恢复。`list_online_files` 和 `read_online_file` 只查询在线工作区，显式声明为 `safe`，SDK 可以重新执行。在线写入和画布修改沿用默认的 `unsafe`。锁定的 Pi 1.6.0 中，四个原生系统工具同样使用 `unsafe`。这类调用中断时，模型会收到中断结果，可以先读取实际状态，再决定下一步。已提交的工具结果保存在会话中。[Pi Durable 官方文档](https://github.com/earendil-works/pi/blob/main/packages/durable/README.md)
 
 ### 添加技能
 
-每个技能以 `SKILL.md` 为入口，YAML frontmatter 至少包含 `name` 和 `description`。发现阶段只提供元数据。匹配后，`skill_load` 返回入口正文和基准路径。Agent 可按入口说明用 `read` 打开 `skills/<name>/references/…`，用 Bash 执行 `skills/<name>/scripts/…`。显式指定 `/skill:名称` 会随当前请求加载入口。已加载的技能包以只读方式提供，编写新技能时在任务目录下建立草稿并用 `install_skill` 保存。额外技能搜索路径通过 `XUYE_SKILL_DIRS` 配置。
+每个技能以 `SKILL.md` 为入口，YAML frontmatter 至少包含与目录名一致的 `name` 和说明用途的 `description`。发现阶段只提供元数据。匹配后，`skill_load` 返回入口正文和基准路径。Agent 可按入口说明用 `read` 打开 `references/` 中的资料，用 `bash` 执行 `scripts/` 中的脚本。显式指定 `/skill:名称` 会随当前请求加载入口。也可直接在「工作区设置 → Agent 工具与技能」导入整个文件夹。额外技能搜索路径通过 `XUYE_SKILL_DIRS` 配置。
+
+要在对话中编写可复用技能，可以直接让 Agent 用 Pi 的 `write` 创建 `.agents/skills/review-prd/SKILL.md`，再写入同目录的 `references/checklist.md` 和 `scripts/check.py`。这个目录对应本工作区数据目录的 `skills/`，服务重启后仍可使用。符合格式的技能会在下一次请求时进入目录，后续可用 `edit` 继续维护，并可从设置页导出。
 
 ## HTTP 接口
 
@@ -93,7 +121,7 @@ npm start
 | POST `api/providers/save` | `{id?,name,base,apiKey?,models:[模型名]}`。返回更新后的目录和 `savedProviderId` |
 | POST `api/providers/discover`、`api/providers/test` | `{id?,base,apiKey?}`，测试另传 `model`。分别返回模型名称列表或连通结果 |
 | POST `api/providers/delete`、`api/models/switch` | 删除使用供应商 `id`；选择使用模型记录 `id` 和 `scope: "agent" / "completion"` |
-| POST `api/agent` | `{mode:"chat",doc,chatId?,question,modelId?}` 或 `{mode:"complete",doc,before,modelId?}`。聊天可通过 Accept `application/x-ndjson` 接收 progress、result、error |
+| POST `api/agent` | `{mode:"chat",doc,chatId?,question,modelId?}` 或 `{mode:"complete",doc,before,after,blockPath?,atBlockEnd?,modelId?}`。聊天可通过 Accept `application/x-ndjson` 接收 progress、result、error |
 | POST `api/agent/queue` | 按 `doc`、`chatId` 获取队列（`list`）、追加消息（`add`）或将指定 `requestId` 移至队首（`prioritize`）。队列保存在 Pi Durable 会话文档中，出队与提交用户输入共用一次事务。 |
 | POST `api/agent/pause`、GET `api/agent/history` | 以 `doc` 和 `chatId` 定位会话，暂停携带对应 `attemptId`，历史支持通过 `tool` 查询工具明细 |
 | GET `api/agent-catalog`、POST `api/skills/import`、POST `api/skills/delete`、GET `api/skills/export` | 工具与技能目录、技能包导入导出 |
@@ -102,4 +130,4 @@ npm start
 
 ## 版本与许可证
 
-开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v1.0.3`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。
+开发使用 `chelen`，确认通过验收后将同一提交合入 `main`，在 `main` 打版本标签。当前版本为 `v2.0.0`。源码按 [Apache License 2.0](LICENSE) 发布，构建的单文件前端附带依赖的许可声明。

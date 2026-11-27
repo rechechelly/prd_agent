@@ -99,7 +99,10 @@ async function refresh(){
   if(!response.ok){
    $('err').textContent='分享链接不可用';view.removeAttribute('srcdoc');
    discussion.disable();discussion.draw([]);item=null;
-   if(response.status===404)stream.close();
+   if(response.status===404){
+     stream.close();document.title=$('title').textContent='分享链接不可用';
+     document.querySelector('.review').hidden=true;$('prd').parentElement.hidden=true;
+   }
    return;
   }
   const next=await response.json();
@@ -112,6 +115,6 @@ async function refresh(){
 }
 for(const key of ['html','prd'])$(key).onclick=()=>{if(item){which=key;show()}};
 const stream=new EventSource(endpoint+'/events');
-stream.onopen=stream.onmessage=refresh;
+stream.onopen=stream.onmessage=stream.onerror=refresh;
 refresh();`,
 );

@@ -1,17 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { db, fault, seal, set, setting, unseal } from "../storage.mjs";
+import { db, fault, seal, set, setting, transaction, unseal } from "../storage.mjs";
 
-function transaction(fn) {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const result = fn();
-    db.exec("COMMIT");
-    return result;
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-}
 export function normalizeBase(value) {
   let url;
   try {
@@ -187,7 +176,7 @@ export function modelConfig(scope, requested) {
   if (typeof id !== "string") fault("模型编号无效");
   const row = db
     .prepare(
-      "SELECT p.id,p.name,p.base,p.secret,m.model FROM provider_models m JOIN providers p ON p.id=m.provider_id WHERE m.id=?",
+      "SELECT p.id,p.name,p.base,p.secret,m.id AS modelId,m.model FROM provider_models m JOIN providers p ON p.id=m.provider_id WHERE m.id=?",
     )
     .get(id);
   if (!row) fault("模型已移除，请重新选择", 409);

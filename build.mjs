@@ -24,7 +24,6 @@ const bundle = await esbuild.build({
   metafile: true,
   legalComments: "inline",
   loader: {
-    ".txt": "text",
     ".woff2": "dataurl",
     ".woff": "dataurl",
     ".ttf": "dataurl",
@@ -43,9 +42,7 @@ const css =
         ")",
     ) +
   "\n" +
-  (bundle.outputFiles.find((f) => f.path.endsWith(".css"))?.text || "") +
-  "\n" +
-  fs.readFileSync("src/style.css", "utf8");
+  bundle.outputFiles.find((f) => f.path.endsWith(".css")).text;
 const licenses = new Map();
 for (const name of Object.keys(bundle.metafile.inputs)) {
   let dir = path.dirname(path.resolve(name));

@@ -1,0 +1,63 @@
+#documentBody {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+#paperScroll { min-width: 0; }
+#workRail #menu { margin-right: 0; }
+#workRail #completionToggle { margin-left: auto; }
+#documentOutline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--outline-width, 180px);
+  min-width: 0;
+  padding: 12px 8px;
+  background: white;
+  border-right: 1px solid var(--line);
+}
+.outlineHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 6px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#outlineResize {
+  position: absolute;
+  z-index: 2;
+  inset: 0 -5px 0 auto;
+  width: 10px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: col-resize;
+}
+#outlineResize:is(:hover, :focus-visible, :active)::after {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  background: var(--purple);
+}
+#documentBody.resizingOutline { user-select: none; cursor: col-resize; }
+#outlineItems { overflow: auto; scrollbar-width: thin; }
+#outlineItems button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px 6px calc(8px + var(--depth) * 12px);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+#outlineItems button[aria-current] { color: var(--purple); background: #f2effa; }
+.compactOutline #documentOutline {
+  position: absolute;
+  inset: 76px auto 0 0;
+  width: var(--outline-width, 220px);
+  z-index: 8;
+  box-shadow: 5px 0 16px #24203612;
+}

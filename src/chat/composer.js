@@ -1,6 +1,6 @@
 import { $ } from "../shared";
 
-export function installComposer(renderMarkdown) {
+export function installComposer(renderMarkdown, ask) {
   const form = $("askForm"), input = $("question"), grip = $("composerGrip");
   const preview = $("questionPreview"), button = $("previewQuestion");
   const storageKey = "xuye.composerHeight";
@@ -30,6 +30,16 @@ export function installComposer(renderMarkdown) {
     localStorage.setItem(storageKey, height);
   };
   window.addEventListener("resize", () => resize(height));
+  input.onkeydown = event => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  };
+  form.onsubmit = event => {
+    event.preventDefault();
+    if (input.value.trim()) ask(input.value);
+  };
   function edit() {
     preview.hidden = true;
     input.hidden = false;

@@ -36,14 +36,27 @@ export function documentRange(editor, source, selection) {
   let start = marked.indexOf(startMark), end = marked.indexOf(endMark) - startMark.length;
   const canonical = marked.replace(startMark, "").replace(endMark, "");
   if (canonical !== source) {
-    // Imported content can use different attribute order, whitespace or table markup.
-    // Map both boundaries, then parse markers back to prove they point at the same occurrence.
-    const parts = diffChars(canonical, source, { maxEditLength: 3000, timeout: 250 }) || [];
-    start = sourceOffset(parts, start, false);
-    end = sourceOffset(parts, end, true);
+    // A large unrelated table or image after the selection needs no diff.
+    if (!source.startsWith(canonical.slice(0, end))) {
+      if (source.endsWith(canonical.slice(start))) {
+        const offset = source.length - canonical.length;
+        start += offset;
+        end += offset;
+      } else {
+        const parts = diffChars(canonical, source, { maxEditLength: 3000, timeout: 250 }) || [];
+        start = sourceOffset(parts, start, false);
+        end = sourceOffset(parts, end, true);
+      }
+    }
+    if (start == null || end == null)
+      throw Error("暂时无法定位这段原文，请在编辑器中重新选择。");
     const candidate = source.slice(0, start) + startMark + source.slice(start, end) + endMark + source.slice(end);
     const parsed = SchemaParser.fromSchema(schema).parse(elementFromString(candidate));
-    if (start == null || end == null || !parsed.eq(tx.doc))
+    // Check both markers at their exact editor positions. The editor may have added
+    // a trailing paragraph after an imported list or table outside this range.
+    const markedTo = last.to + startMark.length + endMark.length;
+    if (markedTo > parsed.content.size ||
+        !parsed.slice(first.from, markedTo).eq(tx.doc.slice(first.from, markedTo)))
       throw Error("暂时无法定位这段原文，请在编辑器中重新选择。");
   }
   return { start, end, text: doc.textBetween(first.from, last.to, "\n") };

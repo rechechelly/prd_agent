@@ -1,3 +1,4 @@
+import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { selectionScope } from "./selection.mjs";
 import { maskImages, prepareReferences } from "./context.mjs";
 import { conversationFor } from "./conversation.mjs";
@@ -11,9 +12,8 @@ import {
   continueProse,
   correctToolResult,
 } from "./prompts.mjs";
-export { agentCatalog } from "./tools.mjs";
-import { pausedRequest, pauseKind, transcriptPath } from "./history.mjs";
-import { diagnostic } from "./stream.mjs";
+import { agentHistory, chatStorageId, pausedRequest, pauseKind, transcriptPath } from "./history.mjs";
+import { diagnostic, toolProgress } from "./stream.mjs";
 import { workspaceCreation } from "../workspace/create-file.mjs";
 import { discoverSkills, skillRuntime } from "../skills.mjs";
 import { boardType } from "../../shared/workspace-files.mjs";
@@ -38,25 +38,36 @@ import {
   hook,
   hookTask,
 } from "@earendil-works/pi-durable";
-import { openChatHarness, closeChatHarness, consumeQueued, messageQueue } from "./queue.mjs";
+import { openChatHarness, closeChatHarness, consumeQueued, messageQueue, WorkspaceRun, WorkspaceAnswer, workspaceSnapshot } from "./queue.mjs";
+import { readWorkspaceCheckpoint, workspaceCheckpoints } from "./workspace-checkpoint.mjs";
 import { directory, fault, seal, unseal } from "../storage.mjs";
 const active = new Map();
 const validId = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
 const paused = Symbol("paused");
 export async function pauseAgent(docId, sessionId, attemptId) {
-  const run = active.get(transcriptPath(docId, sessionId));
+  const identity = transcriptPath(docId, sessionId);
+  const run = active.get(identity);
+  if (!run && validId(attemptId) && pausedRequest(identity)?.attemptId === attemptId)
+    return { status: "paused" };
   if (!validId(attemptId) || !run || run.attemptId !== attemptId)
     fault("这次请求已结束或已切换，请查看会话记录", 409);
   run.pause.abort();
   return run.finished;
 }
+export async function recoverableRequest(identity) {
+  const run = active.get(identity);
+  if (run?.disconnected()) await run.finished;
+  else if (run) return;
+  return (await workspaceSnapshot(identity))?.current;
+}
 export async function runAgent(
-  { doc, docs, session, ownerId = doc.id },
+  { doc, docs, session },
   req,
   p,
   { progress, signal } = {},
 ) {
-  const identity = transcriptPath(doc.id, session?.id);
+  const ownerId = doc.id;
+  const identity = transcriptPath(chatStorageId(doc), session?.id);
   if (active.has(identity)) fault("这篇文档的助手正在运行", 409);
   const requestId = validId(req.requestId) ? req.requestId : randomUUID();
   const attemptId = validId(req.attemptId) ? req.attemptId : requestId;
@@ -65,6 +76,7 @@ export async function runAgent(
   active.set(identity, {
     attemptId,
     pause,
+    disconnected: () => signal?.aborted,
     finished: new Promise((resolve) => {
       finish = resolve;
     }),
@@ -73,22 +85,27 @@ export async function runAgent(
     stage,
     network,
     savePause,
+    admitted = false,
     keepStage = false,
     didPause = false;
   try {
     const folder = path.join(directory, "agent");
     await fs.mkdir(folder, { recursive: true });
-    const bookmark = pausedRequest(identity);
-    if (req.resumeFrom !== bookmark?.requestId)
+    const record = (await workspaceSnapshot(identity))?.current;
+    if (record?.status === "completed" && record.requestId === requestId)
+      return (await workspaceSnapshot(identity, WorkspaceAnswer)).result;
+    const bookmark = record?.status === "submitted" ? record : pausedRequest(identity);
+    const recovering = bookmark?.status === "submitted" && requestId === bookmark.requestId;
+    if (typeof p === "function") p = p(recovering ? bookmark.modelId : req.modelId);
+    if (!recovering && req.resumeFrom !== bookmark?.requestId &&
+        !(record?.status === "completed" && req.resumeFrom === record.requestId))
       fault("暂停状态已变化，请刷新会话后继续", 409);
     const continuing = !!bookmark && req.requestId === bookmark.requestId;
     let saved;
     if (bookmark) {
       keepStage = true;
       stage = path.join(directory, "agent-work", bookmark.stage);
-      saved = JSON.parse(
-        await fs.readFile(path.join(stage, bookmark.snapshot), "utf8"),
-      );
+      saved = await readWorkspaceCheckpoint(stage, identity, bookmark);
       doc = {
         ...doc,
         html: saved.baseHtml,
@@ -158,9 +175,12 @@ export async function runAgent(
       skillSet,
       !!saved,
     );
+    if (saved) await writeSnapshot("current.html", files["current.html"]);
     network = await openTaskNetwork(stage, req.externalApi);
     const { models, deepseek } = runtimeModels(p);
-    const toolCalls = continuing ? saved.toolCalls : [];
+    const toolCalls = continuing
+      ? agentHistory(chatStorageId(doc), session?.id).turns.findLast(t => t.requestId === requestId)?.toolCalls.filter(c => c.status !== "running") || saved.toolCalls || []
+      : [];
     const canvas = boardType(doc.type),
       drawing = { patch: saved?.drawing };
     async function writeCurrent(value) {
@@ -195,12 +215,21 @@ export async function runAgent(
       creation.entries.push(...saved.entries);
       creation.changes.push(...saved.changes);
     }
+    const answerFragments = continuing ? saved.fragments : [];
+    const work = workspaceCheckpoints(stage, {
+      question: req.question, refs: req.refs || [], earlierRefs, editIndex: req.editIndex,
+      externalApi: req.externalApi ? seal(JSON.stringify(req.externalApi)) : undefined,
+      baseHtml: doc.html || "", baseScene: canvas ? doc.scene : undefined,
+    }, () => ({
+      current: files["current.html"], extraImages: images.slice(baseImageCount),
+      entries: creation.entries, changes: creation.changes, drawing: drawing.patch,
+      skills: [...skillSet.active], fragments: answerFragments,
+    }));
     let compactRequest;
     let lastCompactRound = -3;
     const compactTool = defineTool({
       name: "compact_context",
-      description:
-        "长对话切换阶段时请求 Pi 原生上下文压缩。可在 focus 指出需保留的目标、文件 ID、决策和待办。自动阈值和溢出压缩独立运行。",
+      description: toolDescriptions.compact_context,
       parameters: obj({ focus: opt(str()) }),
       async execute({ focus }) {
         if (rounds.size - lastCompactRound < 2)
@@ -220,11 +249,8 @@ export async function runAgent(
       inputs,
       network,
       compactTool,
-      toolCalls,
       env,
       writeCurrent,
-      progress,
-      pause,
     });
     const registry = createRegistry();
     const rounds = new Set();
@@ -253,6 +279,7 @@ export async function runAgent(
                 ),
             ))) &&
         !hasFiles() &&
+        !drawing.patch &&
         files["current.html"] === html &&
         !message?.content?.some(
           (v) =>
@@ -267,6 +294,8 @@ export async function runAgent(
       tools: taskTools,
       tasks: [CompactionBoundary],
       hooks: [
+        toolProgress(toolCalls, progress),
+        work.resultHook,
         hook(CompactionTask, {
           beforeCompact() {
             compactions++;
@@ -309,6 +338,10 @@ export async function runAgent(
     let root = bookmark
       ? await h.conversation(bookmark.conversationId, ctx)
       : await conversationFor(h, session, req.editIndex);
+    if (bookmark?.status === "submitted" && !recovering) {
+      await root.abort(ctx);
+      await root.waitForIdle(ctx);
+    }
     const config = {
       model: { provider: "workspace", modelId: p.model },
       ...(deepseek && { thinkingLevel: "off" }),
@@ -345,7 +378,8 @@ export async function runAgent(
       skillContext,
       images,
     });
-    const checkpoint = (await root.entries({}, 1, undefined, ctx)).items[0]?.id;
+    const checkpoint = recovering ? bookmark.checkpoint :
+      (await root.entries({}, 1, undefined, ctx)).items[0]?.id;
     async function observeSubmission(submission) {
       const conversation = root;
       const abort = () => {
@@ -395,11 +429,10 @@ export async function runAgent(
           });
         }
         const result = await submission.wait(ctx);
-        if (pause.signal.aborted && result.reason === "aborted") {
+        if ((pause.signal.aborted || signal?.aborted) && result.reason === "aborted") {
           await conversation.waitForIdle(ctx);
           throw paused;
         }
-        if (signal?.aborted) fault("本次处理已停止", 499);
         return result;
       } finally {
         signal?.removeEventListener("abort", abort);
@@ -423,11 +456,10 @@ export async function runAgent(
         let task;
         try {
           task = await h.waitForTask(taskId, ctx);
-          if (pause.signal.aborted) {
+          if (pause.signal.aborted || signal?.aborted) {
             await root.waitForIdle(ctx);
             throw paused;
           }
-          if (signal?.aborted) fault("本次处理已停止", 499);
         } finally {
           pause.signal.removeEventListener("abort", abort);
           signal?.removeEventListener("abort", abort);
@@ -443,84 +475,71 @@ export async function runAgent(
               ? "较早对话已压缩。"
               : "压缩摘要未采用。";
         }
-        const next = await root.submit(
+        const next = await admit(
           {
             type: "input",
             requestId: randomUUID(),
             content: [{ type: "text", text: note + "继续完成用户原任务。" }],
           },
-          ctx,
         );
         result = await observeSubmission(next);
       }
       return result;
     }
-    const answerFragments = continuing ? saved.fragments : [];
+    let associated = recovering ? bookmark : undefined;
+    async function admit(draft, initial = false) {
+      const admission = randomUUID();
+      const snapshot = await work.snapshot();
+      work.bind(admission);
+      const next = {
+        status: "submitted", admission, snapshot, requestId,
+        stage: path.basename(stage), conversationId: root.id,
+        ...(p.modelId && { modelId: p.modelId }),
+        refs: req.refs || [],
+        ...(req.editIndex !== undefined && { editIndex: req.editIndex }),
+        ...(checkpoint !== undefined && { checkpoint }),
+      };
+      const id = await root.commit(async (tx) => {
+        if (initial && req.queued) await consumeQueued(tx, requestId);
+        const id = await root.submit(tx, draft);
+        (await tx.doc(WorkspaceRun)).current = { ...next, submissionId: id };
+        if (initial && bookmark) await tx.appendEntry(root.id, {
+          kind: pauseKind, data: {
+            requestId: bookmark.requestId, status: continuing ? "resumed" : "followed",
+          },
+        });
+        return id;
+      }, ctx);
+      associated = { ...next, submissionId: id };
+      keepStage = admitted = true;
+      return h.submission(id, ctx);
+    }
     savePause = async () => {
-      const snapshot = randomUUID() + ".json";
-      await fs.writeFile(
-        path.join(stage, snapshot),
-        JSON.stringify({
-          question: req.question,
-          refs: req.refs || [],
-          earlierRefs,
-          editIndex: req.editIndex,
-          externalApi: req.externalApi
-            ? seal(JSON.stringify(req.externalApi))
-            : undefined,
-          baseHtml: doc.html || "",
-          baseScene: canvas ? doc.scene : undefined,
-          current: files["current.html"],
-          extraImages: images.slice(baseImageCount),
-          entries: creation.entries,
-          changes: creation.changes,
-          drawing: drawing.patch,
-          skills: [...skillSet.active],
-          toolCalls,
-          fragments: answerFragments,
-        }),
-        { flag: "wx", mode: 0o600, flush: true },
-      );
-      await root.commit(
-        (tx) =>
-          tx.appendEntry(root.id, {
-            kind: pauseKind,
-            data: {
-              status: "paused",
-              requestId,
-              stage: path.basename(stage),
-              snapshot,
-              ...(req.editIndex !== undefined && { editIndex: req.editIndex }),
-              refs: req.refs || [],
-            },
-          }),
-        ctx,
-      );
+      await root.commit(async tx => {
+        (await tx.doc(WorkspaceRun)).current = null;
+        await tx.appendEntry(root.id, {
+          kind: pauseKind, data: {
+            status: "paused", requestId, attemptId, stage: associated.stage,
+            snapshot: associated.snapshot, admission: associated.admission,
+            ...(req.editIndex !== undefined && { editIndex: req.editIndex }), refs: req.refs || [],
+          },
+        });
+      }, ctx);
     };
-    const input = continuing
-      ? {
-          type: "continue",
-          requestId: attemptId === requestId ? randomUUID() : attemptId,
-        }
-      : { type: "input", content, requestId };
-    const sub = bookmark || req.queued
-      ? await h.submission(
-          await root.commit(async (tx) => {
-            if (req.queued) await consumeQueued(tx, requestId);
-            const id = await root.submit(tx, input);
-            if (bookmark) await tx.appendEntry(root.id, {
-              kind: pauseKind,
-              data: {
-                requestId: bookmark.requestId,
-                status: continuing ? "resumed" : "followed",
-              },
-            });
-            return id;
-          }, ctx),
-          ctx,
-        )
-      : await root.submit(input, ctx);
-    keepStage = false;
+    let sub;
+    if (recovering) {
+      work.bind(bookmark.admission);
+      keepStage = admitted = true;
+      sub = await h.submission(bookmark.submissionId, ctx);
+      const receipt = await sub.status(ctx);
+      if (receipt.status === "unanswered" && receipt.reason === "aborted")
+        sub = await admit({ type: "continue", requestId: attemptId });
+      else h.resume();
+    } else {
+      sub = await admit(continuing
+        ? { type: "continue", requestId: attemptId === requestId ? randomUUID() : attemptId }
+        : { type: "input", content, requestId }, true);
+    }
     progress?.({ label: "请求已提交", canPause: true });
     let settled = await waitSubmission(sub);
     const answerModel = async () =>
@@ -606,10 +625,7 @@ export async function runAgent(
         await root.configure(config, ctx);
         resume = continuationInput(cut, prompt, content, !!scope);
       }
-      const retry = await root.submit(
-        { type: "input", requestId: randomUUID(), content: resume },
-        ctx,
-      );
+      const retry = await admit({ type: "input", requestId: randomUUID(), content: resume });
       settled = await waitSubmission(retry);
       modelReply = await answerModel();
     }
@@ -679,7 +695,7 @@ export async function runAgent(
       (drawing.patch
         ? "画布修改已生成，可在左侧预览后采用。"
         : "已生成正文修改，可预览后采用。");
-    return {
+    const out = {
       answer,
       ...(hasFiles() && {
         workspaceFiles: creation.entries.map((f) =>
@@ -702,8 +718,27 @@ export async function runAgent(
         files["current.html"] !== html ? restore(files["current.html"]) : null,
       ...(files["current.html"] !== html && { base: doc.html || "" }),
     };
+    // A lost HTTP response can be retrieved by request ID without re-executing the model.
+    await root.commit(async tx => {
+      (await tx.doc(WorkspaceAnswer)).result = JSON.parse(JSON.stringify(out));
+      (await tx.doc(WorkspaceRun)).current = { status: "completed", requestId, refs: req.refs || [],
+        ...(req.editIndex !== undefined && { editIndex: req.editIndex }) };
+    }, ctx);
+    keepStage = false;
+    return out;
   } catch (error) {
-    if (error !== paused) throw error;
+    if (error !== paused) {
+      if (admitted) {
+        const current = (await h.snapshot(WorkspaceRun, ctx))?.current;
+        const sub = current && await h.submission(current.submissionId, ctx);
+        const state = await sub?.status(ctx);
+        if (state?.status === "done" || state?.status === "unanswered") {
+          await h.commit(async tx => { (await tx.doc(WorkspaceRun)).current = null; }, ctx);
+          keepStage = false;
+        }
+      }
+      throw error;
+    }
     await savePause();
     keepStage = didPause = true;
     return { status: "paused", requestId };

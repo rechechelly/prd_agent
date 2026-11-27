@@ -5,9 +5,9 @@ description: 根据产品经理的需求、草稿或旧页面设计产品功能�
 
 # 产品经理需求文档与原型
 
-设计新产品需求时，交付一份可编辑需求文档和一个可交互 HTML，二者共用字段、状态和示例。仅评审或修改已有文件时按用户指定范围处理。
+先根据本次请求确定交付目标。增改字段、流程、段落或页面交互时，默认在当前在线文件内完成，使用 `edit_online_file` 提交局部修改。答疑和评审可以直接回复。用户另外指定了已有文件时，按 ID 或目录路径定位该文件。
 
-在叙页工作台的对话中，读取本包的[撰写规范](generation-prompt.txt)。用 `write_online_file` 创建实际的文档正文（document）和单文件原型（html），默认将 parent_id 设为当前在线文件的 ID，使两份交付并列放在其下。长内容先写骨架，再用 `edit_online_file` 分段完善，也可用 Bash 写好源码后通过 `import_task_file_to_workspace` 将草稿导入已创建的目标 ID。按下文验证两个文件。为当前需求增改字段或交互时，优先用 edit_online_file 就地修改当前文件。用户明确指定另一个目标时，再用 list_online_files 定位该文件。需要配图时，使用配套的 data-prd-view 和 data-prd-shot 标记，调用 `embed_view_screenshots` 并检查工具结果。工作台已配置截图浏览器，此步骤直接由工具完成。最终用 `read_online_file` 核对交付内容。
+在叙页工作台的对话中，读取本包的[撰写规范](generation-prompt.txt)。设计新需求并交付配套产物时，准备一份可编辑 PRD 和一个单文件可交互 HTML，两者共用字段、状态和示例。复用本轮指定或正在编辑的交付文件，用 `write_online_file` 创建缺少的独立产物。用户要求在当前文件下新建时，用其 ID 作为 parent_id。长内容可用 `edit_online_file` 分段完善。任务草稿可用 `read` 读取，再通过 `content` 提交。需要配图时，使用配套的 data-prd-view 和 data-prd-shot 标记，调用 `embed_view_screenshots` 并检查工具结果。工作台已配置截图浏览器，此步骤直接由工具完成。最终用 `read_online_file` 核对交付内容。
 
 用户提供的截图或文案可能描述旧流程。先区分现状和本次改动，再用一条具体的「初始数据 → 用户操作 → 预期结果」场景验证改动。连续操作涉及累计金额或状态时，覆盖中间状态和最终状态。
 

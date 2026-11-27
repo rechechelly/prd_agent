@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { directory } from "../storage.mjs";
+import { managedSkillDirectory } from "../skills.mjs";
 import { fileURLToPath } from "node:url";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { FileError, ok, err } from "@earendil-works/pi-durable/env";
@@ -23,6 +24,7 @@ export function taskBash(network) {
           PIP_USE_DEPRECATED: "legacy-certs",
         }),
         ...network,
+        TASK_WORKSPACE_SKILLS: managedSkillDirectory,
         TMPDIR: execution.cwd,
         LANG: "en_US.UTF-8",
       };
@@ -71,6 +73,20 @@ export async function taskEnvironment(stage, files, skills, resumed = false) {
       new URL("./task-net-bridge.py", import.meta.url),
       path.join(inputs, "network.py"),
     );
+  // The stable alias lives in protected inputs; its target is the sole writable
+  // directory shared by tasks in this workspace. Other workspaces use their own XUYE_DATA.
+  await fs.mkdir(managedSkillDirectory, { recursive: true, mode: 0o700 });
+  if (!(await fs.lstat(managedSkillDirectory)).isDirectory()) throw Error("工作区技能需要存放在独立目录中");
+  const agentDirectory = path.join(inputs, ".agents");
+  await fs.mkdir(agentDirectory, { recursive: true });
+  async function mountLink(target, link) {
+    try { await fs.symlink(target, link); }
+    catch (error) {
+      if (error.code !== "EEXIST" || await fs.readlink(link) !== target) throw error;
+    }
+  }
+  await mountLink(managedSkillDirectory, path.join(agentDirectory, "skills"));
+  await mountLink(agentDirectory, path.join(work, ".agents"));
   if (!resumed)
     await fs.symlink(path.join(inputs, "skills"), path.join(work, "skills"));
   const env = new TaskEnvironment({
@@ -95,37 +111,4 @@ export async function taskEnvironment(stage, files, skills, resumed = false) {
     await fs.rename(temp, path.join(work, name));
   }
   return { env, inputs, mountSkills, writeSnapshot };
-}
-
-export async function readScratchFile(env, source) {
-  if (
-    !source ||
-    source === "." ||
-    source === ".." ||
-    path.basename(source) !== source
-  )
-    throw Error("source 需为本次任务根目录下的文件名");
-  const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-  const file = await fs.open(
-    path.join(env.cwd, source),
-    O_RDONLY | O_NOFOLLOW | O_NONBLOCK,
-  );
-  try {
-    const stat = await file.stat();
-    if (!stat.isFile() || stat.nlink !== 1 || stat.size > 12_000_000)
-      throw Error("source 需为不超过 12 MB 的普通文件");
-    const bytes = Buffer.alloc(stat.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, offset);
-      if (!bytesRead) throw Error("读取期间草稿发生变化，请稍后重试");
-      offset += bytesRead;
-    }
-    const after = await file.stat();
-    if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs)
-      throw Error("读取期间草稿发生变化，请稍后重试");
-    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-  } finally {
-    await file.close();
-  }
 }

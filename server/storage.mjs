@@ -23,6 +23,17 @@ CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,expires INTEGER NOT N
 CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shares(token TEXT PRIMARY KEY,doc TEXT NOT NULL,version INTEGER NOT NULL,title TEXT NOT NULL,html TEXT NOT NULL,prd TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,UNIQUE(doc,version));
 CREATE TABLE IF NOT EXISTS comments(id INTEGER PRIMARY KEY,token TEXT NOT NULL,name TEXT NOT NULL,body TEXT NOT NULL,stamp INTEGER NOT NULL);`);
+export function transaction(fn) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
 export const setting = (k) =>
   db.prepare("SELECT v FROM config WHERE k=?").get(k)?.v;
 export const set = (k, v) =>
@@ -56,16 +67,11 @@ export function setOwnerCredentials(username, password) {
   username = username.trim();
   if (!username || !password) fault("请输入账号和密码");
   const record = passwordRecord(password);
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  transaction(() => {
     set("username", username);
     set("password", record);
     db.exec("DELETE FROM sessions");
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export function login(username, password, remember) {

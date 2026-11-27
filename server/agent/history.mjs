@@ -3,6 +3,16 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { directory, fault } from "../storage.mjs";
+import { generatedId } from "../../shared/workspace-files.mjs";
+
+// Historically a generated PRD kept its conversations under the delivery version.
+// Only that original workspace file owns the old store. A copy has its own file ID.
+export function chatStorageId(file) {
+  const origin = file.origin;
+  if (origin?.file === "prd" && file.id === generatedId(origin.doc, origin.version, "prd"))
+    return JSON.stringify(["prd", origin.doc, origin.version]);
+  return file.id;
+}
 
 export function transcriptPath(docId, sessionId) {
   const key =
@@ -98,7 +108,7 @@ function toolDetail(db, entry, index) {
   const entryRecord = record && JSON.parse(record.record);
   const m = entryRecord?.model[0];
   const interrupted = entryRecord?.data?.diagnostics?.some(
-    ({ code }) => code === "aborted" || code === "interrupted",
+    ({ code }) => ["aborted", "abandoned", "interrupted"].includes(code),
   );
   const result = m?.content.map((part) =>
     part.type === "text"
@@ -151,7 +161,7 @@ export function agentHistory(docId, sessionId, tool) {
         (SELECT json_group_array(json_object('idx',j.key,'id',json_extract(j.value,'$.id'),'name',json_extract(j.value,'$.name')))
          FROM json_each(entries.record,'$.model[0].content') j WHERE j.type='object' AND json_extract(j.value,'$.type')='toolCall') END AS tools,
       json_extract(record,'$.model[0].toolCallId') AS callId, json_extract(record,'$.model[0].isError') AS failed,
-      EXISTS (SELECT 1 FROM json_each(entries.record,'$.data.diagnostics') d WHERE json_extract(d.value,'$.code') IN ('aborted','interrupted')) AS interrupted,
+      EXISTS (SELECT 1 FROM json_each(entries.record,'$.data.diagnostics') d WHERE json_extract(d.value,'$.code') IN ('aborted','abandoned','interrupted')) AS interrupted,
       json_extract(record,'$.model[0].durationMs') AS elapsed FROM entries ORDER BY id`);
     for (const r of rows.iterate()) {
       if (r.kind === "pi.user") {

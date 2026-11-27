@@ -1,4 +1,4 @@
-import { db, fault, set, setting } from "./storage.mjs";
+import { db, fault, set, setting, transaction } from "./storage.mjs";
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS prd_comments (
@@ -22,17 +22,12 @@ if (
     "ALTER TABLE prd_comments ADD COLUMN parent_id INTEGER REFERENCES prd_comments(id) ON DELETE CASCADE",
   );
 if (!setting("prd_comments_v1")) {
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  transaction(() => {
     db.exec(`INSERT OR IGNORE INTO prd_comments(id,doc,version,name,body,stamp)
       SELECT c.id, s.doc, s.version, c.name,c.body,c.stamp
       FROM comments c JOIN shares s ON s.token=c.token`);
     set("prd_comments_v1", "1");
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 export function listComments(doc, version) {

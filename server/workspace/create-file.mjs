@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { defineTool } from "@earendil-works/pi-durable";
 import { obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
 import { workspacePath } from "../../shared/workspace-files.mjs";
+import { toolDescriptions } from "../../shared/agent-catalog.mjs";
+import { editOnlineFileBody } from "../../shared/online-file-edit.mjs";
 import { resolveFile } from "../../shared/assistant-context.mjs";
 import {
   describeCanvas,
@@ -15,8 +17,6 @@ const types = {
   canvas: "画布",
   html: "交互 HTML",
 };
-export const createFileDescription =
-  "在工作区创建文件夹、文档、原型画布或 HTML。path 是含文件名的工作区路径，默认相对于在线工作区根目录；指定 parent_id 时相对于该在线父文件。中间缺失目录自动创建；任何文件都能作为父级。同名路径不会覆盖已有文件。每次返回新 ID，可用于后续调用。";
 const reply = (text, isError = false) => ({
   output: [{ type: "text", text }],
   isError,
@@ -102,8 +102,8 @@ export function workspaceCreation(nodes, currentId, current) {
   };
   const read = defineTool({
     name: "read_online_file",
-    description:
-      "只读在线工作区。按 ID 或文件树路径读取，默认当前文件。可用 offset、limit 按字符分页。读取历史交付引用时按其提供的 id、version 和 file 读取。",
+    replay: "safe",
+    description: toolDescriptions.read_online_file,
     parameters: obj({ ...selector, version: opt(int()), file: opt(oneOf(["prd", "html"])), offset: opt(int()), limit: opt(int()) }),
     async execute({ id, path, version, file, offset = 0, limit = 16000 }) {
       try {
@@ -146,8 +146,7 @@ export function workspaceCreation(nodes, currentId, current) {
   });
   const edit = defineTool({
     name: "edit_online_file",
-    description:
-      "修改在线工作区文件，默认当前文件。用 ID 或文件树路径指定其他目标。可重命名、移动、用 content 替换正文或配合 old_text 精确替换。编辑画布图元使用 draw_online_canvas。",
+    description: toolDescriptions.edit_online_file,
     parameters: obj({
       ...selector,
       title: opt(str()),
@@ -171,7 +170,7 @@ export function workspaceCreation(nodes, currentId, current) {
         const n = target(id, path),
           all = effective();
         const update = {};
-        if (source !== undefined) throw Error("请用 content 提交正文，任务草稿使用 import_task_file_to_workspace");
+        if (source !== undefined) throw Error("请用 content 提交正文。任务文件可先用 read 读取");
         if (
           append &&
           ((n.type !== "文档" && !["需求文档", "备忘录"].includes(n.type)) ||
@@ -215,21 +214,7 @@ export function workspaceCreation(nodes, currentId, current) {
             throw Error("编辑画布图元请使用 draw_online_canvas");
           if (n.type === "文件夹" || content === undefined)
             throw Error("该类型不支持此正文操作");
-          const old = n.html || "";
-          if (
-            old_text !== undefined &&
-            (!old_text ||
-              old.indexOf(old_text) < 0 ||
-              old.indexOf(old_text) !== old.lastIndexOf(old_text))
-          )
-            throw Error("old_text 需要唯一匹配");
-          update.html = append
-            ? /<\/body\s*>/i.test(old)
-              ? old.replace(/<\/body\s*>/i, (match) => content + match)
-              : old + content
-            : old_text === undefined
-              ? content
-              : old.replace(old_text, () => content);
+          update.html = editOnlineFileBody(n.id, n.html || "", { content, oldText: old_text, append });
         }
         if (!Object.keys(update).length) throw Error("请提供要修改的内容");
         if (
@@ -250,7 +235,7 @@ export function workspaceCreation(nodes, currentId, current) {
   });
   const tool = defineTool({
     name: "write_online_file",
-    description: createFileDescription,
+    description: toolDescriptions.write_online_file,
     parameters: obj({
       path: str(),
       type: oneOf(Object.keys(types)),
@@ -270,7 +255,7 @@ export function workspaceCreation(nodes, currentId, current) {
       try {
         if (!Object.hasOwn(types, type)) throw Error("不支持的文件类型");
         const names = relativeNames(path);
-        if (source !== undefined) throw Error("请用 content 提交正文，任务草稿使用 import_task_file_to_workspace");
+        if (source !== undefined) throw Error("请用 content 提交正文。任务文件可先用 read 读取");
         const working = effective(),
           pending = [];
         let parent = parent_id ?? "";
@@ -340,8 +325,8 @@ export function workspaceCreation(nodes, currentId, current) {
   });
   const list = defineTool({
     name: "list_online_files",
-    description:
-      "列出工作区文件树，含名称、类型、ID、父 ID 和层级。默认从根目录开始；传 id 或 path 可只列该节点的后代。offset 和 limit 用于分页。",
+    replay: "safe",
+    description: toolDescriptions.list_online_files,
     parameters: obj({ ...selector, offset: opt(int()), limit: opt(int()) }),
     async execute({ id, path, offset = 0, limit = 100 }) {
       try {

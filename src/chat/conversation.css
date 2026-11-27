@@ -1,0 +1,41 @@
+.chatImageThumb { width: 48px; height: 48px; margin: 3px; object-fit: contain; vertical-align: middle; border-radius: 4px; }
+
+.agentProgress time { margin-inline-start: .45em; font-variant-numeric: tabular-nums; }
+.agentProgress pre, .agentFailure { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.agentProgress pre:empty { display: none; }
+.agentProgress pre { margin: .4em 0; font-size: .9em; max-height: 9em; overflow: auto; }
+.agentProgress button { margin: .4em 0; }
+.agentFailure { color: #91423b; margin: .6em 0; }
+.chatToolCalls .toolTraceRow { margin: .4em 0 .4em .65em; }
+.toolTraceRow > summary { cursor: pointer; }
+.toolTraceRow strong { display: block; margin-top: .45em; }
+.toolTraceRow pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20em; }
+.toolTraceRow img { max-width: 100%; max-height: 18em; object-fit: contain; }
+#messageQueue {
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #faf9fc;
+  font-size: 12px;
+}
+#messageQueue small { display: block; color: var(--muted); }
+#messageQueue ol { margin: 4px 0 0; padding-left: 1.5em; max-height: 16vh; overflow: auto; }
+#messageQueue li { padding: 3px 0; }
+#messageQueue li span { display: inline-block; width: calc(100% - 6em); vertical-align: middle; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#messageQueue button { color: var(--purple); font-size: inherit; padding: 3px 6px; }
+
+#askForm textarea, #questionPreview {
+  height: var(--question-height, 70px);
+}
+#questionPreview { overflow: auto; margin: 0; font-size: 14px; }
+#composerGrip {
+  display: grid; place-items: center; width: 100%; height: 10px;
+  margin: -7px 0 2px; cursor: ns-resize; touch-action: none;
+}
+#composerGrip::after { content: ""; width: 34px; height: 3px; background: #d6d3df; border-radius: 4px; }
+#composerGrip:is(:hover, :focus-visible)::after { background: var(--purple); }
+#previewQuestion { font-size: 12px; white-space: nowrap; padding: 4px; }
+.userTurn .questionBody { white-space: normal; padding: 0; margin: 0; color: inherit; }
+.questionBody > :first-child, #questionPreview > :first-child { margin-top: 0; }
+.questionBody > :last-child { margin-bottom: 0; }

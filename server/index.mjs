@@ -1,9 +1,6 @@
 import { modelRoute } from "./models/routes.mjs";
-import { profiles, modelConfig } from "./models/providers.mjs";
-import { complete } from "./models/client.mjs";
-import { completionMessages } from "./models/completion.mjs";
-import { agentHistory, transcriptPath } from "./agent/history.mjs";
-import { agentStream } from "./agent/stream.mjs";
+import { profiles } from "./models/providers.mjs";
+import { agentRoute } from "./agent/routes.mjs";
 import {
   installSkill,
   removeSkill,
@@ -13,21 +10,21 @@ import {
 import { findDelivery as findOutput } from "../shared/workspace-files.mjs";
 import {
   fileShareState,
-  lookupFileShare,
+  lookupShare,
+  legacyShareToken,
+  shareTokens,
   updateFileShares,
-} from "./file-shares.mjs";
+} from "./sharing/files.mjs";
 import { imageAttachment, uploadAttachment } from "./attachments/attachments.mjs";
 import http from "node:http";
 import fs from "node:fs/promises";
-import { recordWorkspaceFiles } from "./workspace/delivery.mjs";
-import { db, session, login, token, fault } from "./storage.mjs";
+import { db, session, login, fault, transaction } from "./storage.mjs";
 import {
   generationRuns,
   pendingDelivery,
   acknowledgeDeliveries,
 } from "./workspace/generation-log.mjs";
-import { messageQueue } from "./agent/queue.mjs";
-import { runAgent, pauseAgent, agentCatalog } from "./agent/run.mjs";
+import { agentCatalog } from "./agent/tools.mjs";
 import { sharePage, loginPage } from "./pages.mjs";
 import { listComments, addComment, pruneComments } from "./prd-comments.mjs";
 import { serveStaticDelivery } from "./static-delivery.mjs";
@@ -76,6 +73,12 @@ async function body(req) {
 function notify(token) {
   for (const r of clients.get(token) || []) r.write("data: changed\n\n");
 }
+function notifyShare(key, docs) {
+  const subscribers = clients.get(key);
+  if (!subscribers?.size) return;
+  if (lookupShare(key, docs)) notify(key);
+  else for (const response of subscribers) response.end("data: changed\n\n");
+}
 function stream(req, res, key) {
   res.writeHead(200, {
     "content-type": "text/event-stream",
@@ -100,38 +103,20 @@ const workspace = () => JSON.parse(row()?.body || "{}");
 const commentsKey = (doc, version) => "comments:" + doc + ":" + version;
 function notifyComments(doc, version) {
   notify(commentsKey(doc, version));
-  const share = db
-    .prepare("SELECT token FROM shares WHERE doc=? AND version=?")
-    .get(doc, version);
-  if (share) notify(share.token);
-  const file = db
-    .prepare(
-      "SELECT token FROM file_shares WHERE doc=? AND version=? AND file='prd'",
-    )
-    .get(doc, version);
-  if (version === 0) {
-    const plain = db
-      .prepare(
-        "SELECT token FROM file_shares WHERE doc=? AND version=0 AND file='document'",
-      )
-      .get(doc);
-    if (plain) notify(plain.token);
-  }
-  if (file) notify(file.token);
+  for (const key of shareTokens(filesOf(workspace()), { doc, version, file: "prd" })) notify(key);
 }
 function saveWorkspace(input) {
   const w = input.data;
   if (!Array.isArray(w?.docs) || !Array.isArray(w.folders))
     fault("工作区数据不完整");
-  const current = row(),
-    revision = current?.revision || 0;
-  if (input.revision !== revision)
-    fault("其他窗口已保存新版，请先保留本窗口修改，再刷新载入最新版本", 409);
   const changed = [];
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  const revision = transaction(() => {
+    const current = row();
+    const previous = current?.revision || 0;
+    if (input.revision !== previous)
+      fault("其他窗口已保存新版，请先保留本窗口修改，再刷新载入最新版本", 409);
     db.prepare("INSERT OR REPLACE INTO state VALUES(1,?,?)").run(
-      revision + 1,
+      previous + 1,
       JSON.stringify(w),
     );
     const find = (id, version) => findOutput(w.docs, id, version);
@@ -142,39 +127,13 @@ function saveWorkspace(input) {
     );
     acknowledgeDeliveries(filesOf(w));
     pruneComments(find);
-    for (const s of db.prepare("SELECT token,doc,version FROM shares").all()) {
-      const a = find(s.doc, s.version);
-      if (!a?.html && !a?.prd) {
-        db.prepare("DELETE FROM comments WHERE token=?").run(s.token);
-        db.prepare("DELETE FROM shares WHERE token=?").run(s.token);
-        changed.push(s.token);
-        continue;
-      }
-      const r = db
-        .prepare(
-          "UPDATE shares SET title=?,html=?,prd=?,revision=revision+1 WHERE token=? AND (title!=? OR html!=? OR prd!=?)",
-        )
-        .run(
-          a.title,
-          a.html || "",
-          a.prd || "",
-          s.token,
-          a.title,
-          a.html || "",
-          a.prd || "",
-        );
-      if (r.changes) changed.push(s.token);
-    }
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    throw e;
-  }
-  changed.forEach(notify);
-  return { revision: revision + 1 };
+    return previous + 1;
+  });
+  const docs = filesOf(w);
+  changed.forEach(key => notifyShare(key, docs));
+  return { revision };
 }
 const server = http.createServer(async (req, res) => {
-  let live;
   try {
     const url = new URL(req.url, "http://localhost"),
       p = url.pathname,
@@ -223,73 +182,21 @@ const server = http.createServer(async (req, res) => {
     );
     if (pub) {
       const [, kind, key, action] = pub;
-      const shared = lookupFileShare(key, filesOf(workspace()));
-      if (shared) {
-        const { ref, data } = shared;
-        if (kind === "s" && method === "GET" && !action)
-          return send(
-            res,
-            data.kind === "board" ? await fs.readFile(homepage) : sharePage,
-            200,
-            "text/html",
-          );
-        if (kind !== "api/public") fault("无此页面", 404);
-        if (method === "GET" && action === "events")
-          return stream(req, res, key);
-        if (method === "GET" && !action)
-          return send(res, {
-            ...data,
-            comments:
-              ref.file === "prd" || data.kind === "document"
-                ? listComments(ref.doc, ref.version)
-                : [],
-          });
-        if (
-          method === "POST" &&
-          action === "comments" &&
-          (ref.file === "prd" || data.kind === "document")
-        ) {
-          throttle("comment:" + req.socket.remoteAddress, 35, 60000);
-          const input = await body(req);
-          if (!lookupFileShare(key, filesOf(workspace())))
-            fault("链接不存在", 404);
-          addComment(ref.doc, ref.version, input);
-          notifyComments(ref.doc, ref.version);
-          return send(res, { ok: true });
-        }
-        fault("无此页面", 404);
-      }
-      const item = db
-        .prepare(
-          "SELECT doc,version,title,html,prd,revision FROM shares WHERE token=? AND NOT EXISTS (SELECT 1 FROM file_shares f WHERE f.doc=shares.doc AND f.version=shares.version AND f.enabled=0)",
-        )
-        .get(key);
-      if (!item) fault("链接不存在", 404);
+      const shared = lookupShare(key, filesOf(workspace()));
+      if (!shared) fault("链接不存在", 404);
+      const { ref, data, canComment } = shared;
       if (kind === "s" && method === "GET" && !action)
-        return send(res, sharePage, 200, "text/html");
-      if (kind === "api/public" && method === "GET" && action === "events")
-        return stream(req, res, key);
-      if (kind === "api/public" && method === "GET" && !action)
-        return send(res, {
-          title: item.title,
-          ...(item.html && item.prd
-            ? { html: item.html, prd: item.prd }
-            : {
-                kind: item.html ? "html" : "prd",
-                content: item.html || item.prd,
-              }),
-          revision: item.revision,
-          comments: listComments(item.doc, item.version),
-        });
-      if (kind === "api/public" && method === "POST" && action === "comments") {
+        return send(res, data.kind === "board" ? await fs.readFile(homepage) : sharePage, 200, "text/html");
+      if (kind !== "api/public") fault("无此页面", 404);
+      if (method === "GET" && action === "events") return stream(req, res, key);
+      if (method === "GET" && !action)
+        return send(res, { ...data, comments: canComment ? listComments(ref.doc, ref.version) : [] });
+      if (method === "POST" && action === "comments" && canComment) {
         throttle("comment:" + req.socket.remoteAddress, 35, 60000);
-        const b = await body(req);
-        if (
-          !db.prepare("SELECT 1 FROM shares WHERE token=? AND prd!='' AND NOT EXISTS (SELECT 1 FROM file_shares f WHERE f.doc=shares.doc AND f.version=shares.version AND f.enabled=0)").get(key)
-        )
-          fault("链接不存在", 404);
-        addComment(item.doc, item.version, b);
-        notifyComments(item.doc, item.version);
+        const input = await body(req);
+        if (!lookupShare(key, filesOf(workspace()))?.canComment) fault("链接不存在", 404);
+        addComment(ref.doc, ref.version, input);
+        notifyComments(ref.doc, ref.version);
         return send(res, { ok: true });
       }
       fault("无此页面", 404);
@@ -374,44 +281,22 @@ const server = http.createServer(async (req, res) => {
     )
       return send(res, await modelRoute(p, method, () => body(req)));
     if (p === "/api/share" && method === "POST") {
-      const b = await body(req),
-        w = row();
-      if (b.file !== undefined || b.version === undefined) {
-        const ref = {
-          doc: b.doc,
-          version: b.version ?? 0,
-          file: b.file ?? "document",
-        };
-        if (typeof ref.doc !== "string" || !Number.isSafeInteger(ref.version))
-          fault("文件标识无效");
-        if (b.enabled !== undefined && typeof b.enabled !== "boolean") fault("分享状态无效");
-        const state = fileShareState(filesOf(workspace()), ref, b.lookup ? undefined : (b.enabled ?? true));
-        if (!b.lookup && state.token) {
-          notify(state.token);
-          const pair = db.prepare("SELECT token FROM shares WHERE doc=? AND version=?").get(ref.doc, ref.version);
-          if (pair) notify(pair.token);
-        }
-        return send(res, { enabled: state.enabled, token: state.enabled ? state.token : null,
-          url: state.enabled ? origin + "/s/" + state.token : null });
+      const b = await body(req);
+      const docs = filesOf(workspace());
+      const ref = { doc: b.doc, version: b.version ?? 0, file: b.file ?? "document" };
+      if (typeof ref.doc !== "string" || !Number.isSafeInteger(ref.version)) fault("文件标识无效");
+      if (b.enabled !== undefined && typeof b.enabled !== "boolean") fault("分享状态无效");
+      let key;
+      const legacy = b.file === undefined && ref.version > 0;
+      if (legacy) {
+        if (b.enabled !== undefined) fault("切换分享状态时请指定 prd 或 html 文件");
+        key = legacyShareToken(docs, ref.doc, ref.version, b.lookup);
+      } else {
+        key = fileShareState(docs, ref, b.lookup ? undefined : (b.enabled ?? true));
+        if (!b.lookup) for (const link of shareTokens(docs, ref)) notifyShare(link, docs);
       }
-      const a = w && findOutput(JSON.parse(w.body).docs, b.doc, b.version);
-      if (!a?.html || !a?.prd) fault("先生成并保存两份交付文件");
-      let existing = db
-        .prepare("SELECT token FROM shares WHERE doc=? AND version=?")
-        .get(b.doc, b.version);
-      if (!existing && b.lookup) return send(res, { url: null });
-      if (!existing) {
-        const key = token();
-        db.prepare(
-          "INSERT INTO shares(token,doc,version,title,html,prd) VALUES(?,?,?,?,?,?)",
-        ).run(key, b.doc, b.version, a.title, a.html, a.prd);
-        existing = { token: key };
-      }
-      return send(res, {
-        url: origin + "/s/" + existing.token,
-        token: existing.token,
-        comments: listComments(b.doc, b.version),
-      });
+      return send(res, { enabled: !!key, token: key, url: key ? origin + "/s/" + key : null,
+        ...(legacy && key && { comments: listComments(ref.doc, ref.version) }) });
     }
     if (p === "/api/pending-delivery" && method === "GET") {
       const id = url.searchParams.get("doc");
@@ -427,144 +312,14 @@ const server = http.createServer(async (req, res) => {
         fault("文档不存在", 404);
       return send(res, { runs: generationRuns(id) });
     }
-    if (p === "/api/agent/history" && method === "GET") {
-      const file = filesOf(workspace()).find(
-        (f) => f.id === url.searchParams.get("doc"),
-      );
-      const chatId = url.searchParams.get("chatId");
-      if (
-        !file ||
-        !(file.chatSessions || [{ id: "legacy" }]).some((s) => s.id === chatId)
-      )
-        fault("会话不存在", 404);
-      const id =
-        file.origin?.file === "prd"
-          ? JSON.stringify(["prd", file.origin.doc, file.origin.version])
-          : file.id;
-      return send(res, agentHistory(id, chatId, url.searchParams.get("tool")));
-    }
-    if (["/api/agent", "/api/agent/pause", "/api/agent/queue"].includes(p) && method === "POST") {
-      const b = await body(req);
-      // Active clients describe external requests in chat. Paused pre-1.0.1 turns
-      // can still recover their original task-scoped credential from the bookmark.
-      delete b.externalApi;
-      const w = JSON.parse(row()?.body || "{}"),
-        doc = filesOf(w).find((d) => d.id === b.doc);
-      if (!doc) fault("文档不存在", 404);
-      if (p === "/api/agent" && !["chat", "complete"].includes(b.mode))
-        fault("请通过 Agent 对话创建文件");
-      if (p === "/api/agent" && b.mode === "complete") {
-        const controller = new AbortController();
-        res.once("close", () => controller.abort());
-        const text = await complete(
-          modelConfig("completion", b.modelId),
-          completionMessages(doc.title, b),
-          1024,
-          controller.signal,
-        );
-        if (!res.destroyed) send(res, { text });
-        return;
-      }
-      let target =
-          doc.origin?.file === "prd"
-            ? {
-                ...doc,
-                id: JSON.stringify(["prd", doc.origin.doc, doc.origin.version]),
-              }
-            : doc,
-        file = doc;
-      if (b.prdVersion !== undefined) {
-        const output = findOutput(w.docs, doc.id, b.prdVersion);
-        if (!output?.prd) fault("未找到指定版本的图文 PRD", 404);
-        file = output;
-        target = {
-          id: JSON.stringify(["prd", doc.id, b.prdVersion]),
-          title: doc.title + " / v" + b.prdVersion + " / 图文 PRD",
-          html: output.prd,
-        };
-      }
-      const session = file.chatSessions?.find((s) => s.id === b.chatId);
-      if (!session && b.chatId === "legacy" && !file.chatSessions && p === "/api/agent/queue" && b.action === "list") return send(res, { items: [] });
-      if (b.chatId !== undefined && !session)
-        fault("会话不存在，请刷新工作区", 409);
-      if (p === "/api/agent/queue" || b.queued) {
-        if (!session) fault("会话不存在", 404);
-        const path = transcriptPath(target.id, session.id);
-        if (p === "/api/agent/queue") {
-          const { action, requestId, question, refs = [], modelId } = b;
-          if (!["list", "add", "prioritize"].includes(action)) fault("未知的队列操作");
-          if (action !== "list" && !/^[0-9a-f-]{36}$/i.test(requestId || "")) fault("消息编号无效");
-          if (action === "add" && (typeof question !== "string" || !question.trim() || !Array.isArray(refs))) fault("消息内容无效");
-          const item = action === "add" ? { requestId, question, refs, ...(modelId && { modelId }), createdAt: Date.now() } : { requestId };
-          return send(res, { items: await messageQueue(path, action, item) });
-        }
-        const [head] = await messageQueue(path);
-        if (!head || head.requestId !== b.requestId) fault("消息队列已更新", 409);
-        Object.assign(b, { question: head.question, refs: head.refs, modelId: head.modelId });
-      }
-      if (p === "/api/agent/pause")
-        return send(res, await pauseAgent(target.id, b.chatId, b.attemptId));
-      if (
-        b.editIndex !== undefined &&
-        (!session ||
-          !Number.isSafeInteger(b.editIndex) ||
-          b.editIndex < 0 ||
-          b.editIndex >= session.messages.length)
-      )
-        fault("要编辑的消息不存在", 409);
-      if (req.headers.accept === "application/x-ndjson")
-        live = agentStream(res);
-      const completeChat = (result) =>
-        live ? live.end("result", result) : send(res, result);
-      const out = await runAgent(
-        {
-          doc: target,
-          ownerId: doc.id,
-          docs: filesOf(w),
-          session,
-        },
-        b,
-        modelConfig("agent", b.modelId),
-        live,
-      );
-      if (out.status === "paused") return completeChat(out);
-      if (out.workspaceFiles) {
-        const { workspaceFiles, workspaceChanges, ...chat } = out;
-        const delivery = recordWorkspaceFiles(
-          doc.id,
-          workspaceFiles,
-          workspaceChanges,
-          b.question,
-        );
-        const summary = [];
-        if (delivery.files.length)
-          summary.push(
-            "已创建 " + delivery.files.map((f) => f.title).join("、"),
-          );
-        if (delivery.changes.length)
-          summary.push(
-            "已处理 " +
-              delivery.changes.length +
-              " 个文件的修改，正文和画布修改可在对应文件中预览",
-          );
-        return completeChat({
-          ...chat,
-          ...(chat.proposed != null && { base: chat.base ?? target.html }),
-          answer: summary.join("。") + "。",
-          delivery,
-        });
-      }
-      return completeChat(
-        out.proposed != null ? { ...out, base: out.base ?? target.html } : out,
-      );
+    if (p === "/api/agent" || p.startsWith("/api/agent/")) {
+      const input = method === "POST" ? await body(req) : undefined;
+      const result = await agentRoute(url, req, res, filesOf(workspace()), input);
+      if (!res.writableEnded && !res.destroyed) send(res, result);
+      return;
     }
     fault("无此页面", 404);
   } catch (e) {
-    if (live)
-      return live.end("error", {
-        error: e.status ? e.message : "服务执行失败，请检查服务状态后重试",
-        ...(e.selectionExpired && { selectionExpired: true }),
-      });
     if (!res.headersSent)
       send(
         res,

@@ -2,7 +2,7 @@ import { diffArrays } from "diff";
 import DOMPurify from "dompurify";
 
 // Apply the same ordered edit list to either the review surface or a clean document.
-export function planEdits(base, proposal, generated) {
+export function planEdits(base, proposal) {
   const parse = (html) =>
     new DOMParser().parseFromString(DOMPurify.sanitize(html), "text/html");
   const before = parse(base),
@@ -140,34 +140,16 @@ export function planEdits(base, proposal, generated) {
       el.removeAttribute("data-inline-delta");
     }
   const ops = align(before.body, after.body);
-  const metaChanged =
-    generated &&
-    (before.head.innerHTML !== after.head.innerHTML ||
-      shell(before.body) !== shell(after.body) ||
-      shell(before.documentElement) !== shell(after.documentElement));
-  const meta = metaChanged ? count++ : -1;
   function build(choice) {
-    const doc = (
-      meta < 0 || choice(meta) === "undo" ? before : after
-    ).cloneNode(true);
+    const doc = before.cloneNode(true);
     doc.body.replaceChildren();
     for (const op of ops) op(doc.body, choice);
-    if (meta >= 0 && choice(meta) === "review") {
-      const label = doc.createElement("p");
-      label.textContent = "页面样式或文档属性已修改";
-      mark(doc.body, label, "add", meta);
-    }
     return doc;
   }
   return {
     count,
     preview: (choices) => build((id) => choices[id] || "review"),
-    content(choice) {
-      const doc = build(choice);
-      return generated
-        ? "<!doctype html>" + doc.documentElement.outerHTML
-        : doc.body.innerHTML;
-    },
+    content: (choice) => build(choice).body.innerHTML,
   };
 }
 

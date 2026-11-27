@@ -1,5 +1,3 @@
-import { describeCanvas } from "./canvas-model.mjs";
-
 export const boardType = (type) => type === "画布" || type === "原型画布";
 export const generatedId = (doc, version, file) =>
   doc + "-" + version + "-" + file;
@@ -68,7 +66,7 @@ const escape = (s) =>
     /[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
   );
-export function folderContents(folder, files) {
+function folderContents(folder, files) {
   const seen = new Set([folder.id]),
     items = [];
   function visit(parent) {
@@ -81,35 +79,6 @@ export function folderContents(folder, files) {
   }
   visit(folder.id);
   return items;
-}
-export function generationContent(file, files) {
-  if (boardType(file.type))
-    return (
-      "<h1>" +
-      escape(file.title) +
-      "</h1><pre>" +
-      escape(JSON.stringify(describeCanvas(file.scene))) +
-      "</pre>"
-    );
-  if (file.type !== "文件夹") return file.html || "<p></p>";
-  return (
-    "<h1>" +
-    escape(file.title) +
-    "</h1>" +
-    folderContents(file, files)
-      .map(
-        (child) =>
-          "<h2>" +
-          escape(child.title) +
-          "</h2>" +
-          (child.type === "文件夹"
-            ? ""
-            : boardType(child.type)
-              ? generationContent(child, [])
-              : child.html || ""),
-      )
-      .join("")
-  );
 }
 export function folderListing(folder, files) {
   return (

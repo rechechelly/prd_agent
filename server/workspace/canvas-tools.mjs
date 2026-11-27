@@ -1,3 +1,4 @@
+import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { defineTool } from "@earendil-works/pi-durable";
 import { arr, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { validateDrawing } from "../../shared/canvas-model.mjs";
@@ -9,8 +10,7 @@ export function drawCanvasTool(workspace) {
   });
   return defineTool({
     name: "draw_online_canvas",
-    description:
-      "按工作区画布 id 或 path 绘制可编辑图元。省略目标表示当前画布。可操作刚由 write_online_file 创建的画布。可分批提交：先提交状态框，再用 from/to 绑定箭头。同 id 更新，仅显式 remove 才删除。",
+    description: toolDescriptions.draw_online_canvas,
     parameters: obj({
       id: opt(str({ description: "目标画布文件 ID，与 path 二选一" })),
       path: opt(

@@ -1,0 +1,211 @@
+.blockTools {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  color: #30333c;
+}
+.blockTools button,
+.blockMenu {
+  pointer-events: auto;
+}
+.blockHandle,
+.edgeTool,
+.blockMenu {
+  position: fixed;
+}
+.blockHandle {
+  background: white;
+  border: 1px solid #dce0e6;
+  border-radius: 5px;
+  height: 25px;
+  min-width: 25px;
+  line-height: 1;
+  padding: 2px;
+  color: #626977;
+}
+.blockHandle:hover,
+.blockHandle:focus {
+  color: #376eea;
+  background: #edf2ff;
+}
+.blockMenu {
+  width: 218px;
+  background: #fff;
+  border: 1px solid #dce0e6;
+  border-radius: 9px;
+  padding: 7px;
+  box-shadow: 0 8px 30px #172b4d24;
+  max-height: 78vh;
+  overflow: auto;
+}
+.blockMenu > button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 6px 9px;
+}
+.blockMenu button:hover,
+.blockMenu button:focus-visible {
+  background: #ebeff8;
+}
+.blockFormats {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #e6e8ee;
+  padding-bottom: 5px;
+  margin-bottom: 5px;
+}
+.blockFormats button {
+  min-width: 29px;
+  font-weight: 600;
+  padding: 5px;
+}
+.tablePicker {
+  padding: 4px;
+}
+.tablePicker > div {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+}
+.tablePicker button {
+  border-radius: 1px;
+  aspect-ratio: 1;
+  padding: 0;
+  background: #eceef2;
+}
+.tablePicker button.marked {
+  background: #9fb7ff;
+}
+.edgeTool {
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #4679fa;
+  color: white;
+  line-height: 20px;
+  font-weight: 600;
+}
+.edgeTool:hover {
+  background: #2863eb;
+}
+.edgeTool:focus-visible,
+.blockHandle:focus-visible {
+  outline: 2px solid #3f73f1;
+}
+.tiptap table {
+  table-layout: fixed;
+}
+.tiptap td,
+.tiptap th {
+  position: relative;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.tiptap td img,
+.tiptap th img {
+  max-width: none;
+}
+.tiptap .column-resize-handle {
+  width: 3px;
+  background: #477cfa;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.tiptap.resize-cursor {
+  cursor: col-resize;
+}
+.tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.tiptap li[data-type="taskItem"],
+.tiptap ul[data-type="taskList"] > li {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+}
+.tiptap ul[data-type="taskList"] > li > div {
+  flex: 1;
+}
+.blockHighlight,
+.tableGuide {
+  position: fixed;
+  pointer-events: none;
+}
+.blockHighlight {
+  background: #557ef114;
+  border-radius: 5px;
+}
+.tableGuide {
+  background: #4679fa;
+}
+.tablePicker.flyout {
+  position: fixed;
+  overflow: auto;
+  width: 208px;
+  background: white;
+  border: 1px solid #dce0e6;
+  box-shadow: 0 6px 22px #172b4d1f;
+  border-radius: 8px;
+  padding: 10px;
+}
+.tablePicker small {
+  display: block;
+  margin-bottom: 6px;
+  color: #68727f;
+}
+
+.tiptap .tableWrapper { margin-block: 32px 12px; }
+.tableRail { position:fixed; pointer-events:auto; }
+.tableRail.rows { width:26px; }
+.tableRail.columns { height:26px; }
+.tableRail .axisHandle {
+  position:absolute; padding:0; border:0; border-radius:0;
+  background:transparent; cursor:pointer;
+}
+.tableRail.columns .axisHandle { top:0; height:100%; }
+.tableRail.rows .axisHandle { left:0; width:100%; }
+.axisHandle::before {
+  content:""; position:absolute; background:#e3e7f0; border-radius:4px;
+}
+.columns .axisHandle::before { inset:6px 1px 2px; }
+.rows .axisHandle::before { inset:1px 2px 1px 6px; }
+.axisHandle:hover::before, .axisHandle:focus-visible::before { background:#aabff8; }
+.tiptap .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #507de83b;
+  pointer-events: none;
+}
+.axisDelete, .textSelectionBar {
+  position: fixed;
+  z-index: 22;
+  border: 1px solid #dce0e6;
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 3px 12px #29324a24;
+}
+.axisDelete { padding: 6px; color: #bc3846; }
+.axisDelete:hover { background: #fff0f1; }
+.textSelectionBar:not([hidden]) { display: flex; padding: 3px; gap: 2px; }
+.textSelectionBar button { min-width: 28px; padding: 4px; }
+.textSelectionBar button:hover, .textSelectionBar button[aria-pressed=true] { color: #504197; background: #eeeafa; }
+.textSelectionBar [data-mark=bold] { font-weight: 750; }
+.textSelectionBar [data-mark=italic] { font-style: italic; }
+.textSelectionBar [data-mark=underline] { text-decoration: underline; }
+.textSelectionBar [data-mark=strike] { text-decoration: line-through; }
+.blockMenu.styleMenu .blockFormats { display:grid; grid-template-columns:repeat(6,1fr); gap:2px; border:0; margin:0; padding:0; }
+.blockHighlight { background:#587ef226; border-radius:4px; }
+.selectingBlocks, .selectingBlocks * { user-select:none !important; cursor:crosshair; }
+.blockMarquee { position:fixed; pointer-events:none; z-index:21; border:1px solid #4374ed; background:#507dea20; }
+.tiptap > .marqueeSelected { outline:1px solid #7799f4; background-color:#587ef224; }
+.wholeTableDelete { position:fixed; padding:3px; border:1px solid #dadde5; border-radius:5px; background:white; color:#727689; }
+.wholeTableDelete:hover { color:#b5364b; background:#fff3f3; }

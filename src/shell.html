@@ -259,48 +259,11 @@
                 </div>
               </div>
               <pre id="htmlDiff" aria-label="HTML 源码修改" hidden></pre>
-              <iframe
-                id="prdInline"
-                title="图文 PRD 内联修改"
-                sandbox="allow-same-origin"
-                hidden
-              ></iframe>
-              <div id="imageOutline" hidden></div>
             </div>
           </div>
         </section>
       </main>
     </div>
-    <template id="legacyPrdToolbar">
-      <select aria-label="段落样式" id="format">
-        <option value="0">正文</option>
-        <option value="2">二级标题</option>
-        <option value="3">三级标题</option></select
-      ><span class="sep"></span
-      ><button data-cmd="bold" title="粗体"><b>B</b></button
-      ><button data-cmd="italic" title="斜体"><em>I</em></button
-      ><button data-cmd="list" title="无序列表">
-        <i data-ico="list"></i></button
-      ><span class="sep"></span
-      ><button data-cmd="image" title="插入图片">
-        <i data-ico="image"></i></button
-      ><button data-cmd="table" title="插入表格">
-        <i data-ico="table"></i></button
-      ><button data-cmd="markdown" title="插入 Markdown">M↓</button
-      ><button data-cmd="undo" title="撤销">
-        <i data-ico="undo"></i>
-      </button>
-      <select class="tableOperations" aria-label="表格行列操作" hidden>
-        <option value="">表格行列</option>
-        <option value="addRowBefore">在上方插入行</option>
-        <option value="addRowAfter">在下方插入行</option>
-        <option value="deleteTable">删除整个表格</option>
-        <option value="deleteRow">删除当前行</option>
-        <option value="addColumnBefore">在左侧插入列</option>
-        <option value="addColumnAfter">在右侧插入列</option>
-        <option value="deleteColumn">删除当前列</option>
-      </select>
-    </template>
     <dialog id="settingsDialog" aria-labelledby="settingsTitle" closedby="any">
       <div class="historyHead">
         <h2 id="settingsTitle">工作区设置</h2>
