@@ -104,7 +104,7 @@ export async function readScratchFile(env, source) {
     source === ".." ||
     path.basename(source) !== source
   )
-    throw Error("source 需为 任务工作目录下的文件名");
+    throw Error("source 需为本次任务根目录下的文件名");
   const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
   const file = await fs.open(
     path.join(env.cwd, source),
@@ -115,8 +115,16 @@ export async function readScratchFile(env, source) {
     if (!stat.isFile() || stat.nlink !== 1 || stat.size > 12_000_000)
       throw Error("source 需为不超过 12 MB 的普通文件");
     const bytes = Buffer.alloc(stat.size);
-    const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
-    return { html: bytes.toString("utf8", 0, bytesRead) };
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesRead } = await file.read(bytes, offset, bytes.length - offset, offset);
+      if (!bytesRead) throw Error("读取期间草稿发生变化，请稍后重试");
+      offset += bytesRead;
+    }
+    const after = await file.stat();
+    if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs)
+      throw Error("读取期间草稿发生变化，请稍后重试");
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   } finally {
     await file.close();
   }

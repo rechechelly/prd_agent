@@ -24,7 +24,6 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   createStage,
   taskEnvironment,
-  readScratchFile,
 } from "../runtime/task-environment.mjs";
 import { openTaskNetwork } from "../runtime/task-network.mjs";
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
@@ -179,7 +178,6 @@ export async function runAgent(
     const creation = workspaceCreation(
       docs,
       ownerId,
-      (source) => readScratchFile(env, source),
       {
         read: () => ({
           html: files["current.html"],
@@ -290,7 +288,7 @@ export async function runAgent(
               correctionCount++;
               progress?.({ label: "正在核对工具结果并修正" });
               return {
-                continue: scope ? "查看工具结果。答疑直接回答，修改使用 edit_file 的 content 替换指定选区；请保留选区内标签。" : correctToolResult,
+                continue: scope ? "查看工具结果。答疑直接回答，修改使用 edit_online_file 的 content 替换指定选区；请保留选区内标签。" : correctToolResult,
               };
             }
           },
@@ -542,9 +540,9 @@ export async function runAgent(
         .trim() || "";
     let modelReply = await answerModel();
     const attemptedDrawing = () =>
-      toolCalls.some((t) => t.name === "draw_canvas") ||
+      toolCalls.some((t) => t.name === "draw_online_canvas" || t.name === "draw_canvas") ||
       modelReply?.content?.some(
-        (v) => v.type === "toolCall" && v.name === "draw_canvas",
+        (v) => v.type === "toolCall" && v.name === "draw_online_canvas",
       );
     // A length-stopped tool batch was never executed by Pi. Retry from a clean
     // transcript and the accepted workspace drafts, not the incomplete arguments.

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineTool } from "@earendil-works/pi-durable";
 import { obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
+import { workspacePath } from "../../shared/workspace-files.mjs";
 import { resolveFile } from "../../shared/assistant-context.mjs";
 import {
   describeCanvas,
@@ -15,14 +16,23 @@ const types = {
   html: "交互 HTML",
 };
 export const createFileDescription =
-  "在工作区创建文件夹、文档、原型画布或 HTML。path 是含文件名的工作区路径，以 / 开头从根目录解析，否则以 parent_id 或当前文件为起点。中间缺失目录自动创建；任何文件都能作为父级。同名路径不会覆盖已有文件。每次返回新 ID，可用于后续调用。";
+  "在工作区创建文件夹、文档、原型画布或 HTML。path 是含文件名的工作区路径，默认相对于在线工作区根目录；指定 parent_id 时相对于该在线父文件。中间缺失目录自动创建；任何文件都能作为父级。同名路径不会覆盖已有文件。每次返回新 ID，可用于后续调用。";
 const reply = (text, isError = false) => ({
   output: [{ type: "text", text }],
   isError,
 });
 
+function relativeNames(path) {
+  if (typeof path !== "string" || /^(?:\/|[a-zA-Z]:|[a-z][a-z0-9+.-]*:\/\/)/i.test(path) || path.includes("\\"))
+    throw Error("请使用在线工作区内的相对路径");
+  const names = path.replace(/^\.\//, "").split("/").map(name => name.trim());
+  if (names.some(name => !name || name === "." || name === ".." || /[\x00-\x1f]/.test(name)))
+    throw Error("相对路径需要有效文件名，不能包含空段或上级目录");
+  return names;
+}
+
 // Paths resolve against workspace nodes only. An unsuccessful call adds no ancestors.
-export function workspaceCreation(nodes, currentId, readSource, current) {
+export function workspaceCreation(nodes, currentId, current) {
   const entries = [],
     changes = [];
   function effective() {
@@ -37,15 +47,13 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
     if (id !== undefined && path !== undefined)
       throw Error("请选择 id 或 path");
     if (path !== undefined) {
-      let parent = path.startsWith("/") ? "" : currentId;
-      for (const title of (path.startsWith("/") ? path.slice(1) : path).split(
-        "/",
-      )) {
+      let parent = "";
+      for (const title of relativeNames(path)) {
         const matches = all.filter(
           (n) => (n.parent || "") === parent && n.title === title,
         );
         if (matches.length !== 1)
-          throw Error("路径不存在或有重名，请用 list_file 返回的 ID");
+          throw Error("路径不存在或有重名，请用 list_online_files 返回的 ID");
         parent = matches[0].id;
       }
       id = parent;
@@ -88,9 +96,12 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
       current.writeDrawing(patch);
     else recordUpdate(node, { drawing: patch });
   }
-  const selector = { id: opt(str()), path: opt(str()) };
+  const selector = {
+    id: opt(str({ description: "在线文件 ID，与 path 二选一" })),
+    path: opt(str({ description: "相对于在线工作区根目录的文件树路径，例如 需求/原型" })),
+  };
   const read = defineTool({
-    name: "read_file",
+    name: "read_online_file",
     description:
       "只读在线工作区。按 ID 或文件树路径读取，默认当前文件。可用 offset、limit 按字符分页。读取历史交付引用时按其提供的 id、version 和 file 读取。",
     parameters: obj({ ...selector, version: opt(int()), file: opt(oneOf(["prd", "html"])), offset: opt(int()), limit: opt(int()) }),
@@ -134,20 +145,14 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
     },
   });
   const edit = defineTool({
-    name: "edit_file",
+    name: "edit_online_file",
     description:
-      "修改在线工作区文件，默认当前文件。用 ID 或文件树路径指定其他目标。可重命名、移动、用 content 替换正文或配合 old_text 精确替换。编辑画布图元使用 draw_canvas。",
+      "修改在线工作区文件，默认当前文件。用 ID 或文件树路径指定其他目标。可重命名、移动、用 content 替换正文或配合 old_text 精确替换。编辑画布图元使用 draw_online_canvas。",
     parameters: obj({
       ...selector,
       title: opt(str()),
       parent_id: opt(str()),
       content: opt(str()),
-      source: opt(
-        str({
-          description:
-            "从本轮 任务工作目录读取 UTF-8 文件，用于包含内嵌图片或表格的正文，与 content 二选一。",
-        }),
-      ),
       append: opt(bool({ description: "向文档末尾追加，保留已有正文。" })),
       old_text: opt(str()),
     }),
@@ -166,10 +171,7 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
         const n = target(id, path),
           all = effective();
         const update = {};
-        if (source !== undefined) {
-          if (content !== undefined) throw Error("请选择 source 或 content");
-          content = (await readSource(source, n.type)).html;
-        }
+        if (source !== undefined) throw Error("请用 content 提交正文，任务草稿使用 import_task_file_to_workspace");
         if (
           append &&
           ((n.type !== "文档" && !["需求文档", "备忘录"].includes(n.type)) ||
@@ -210,7 +212,7 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
           old_text !== undefined
         ) {
           if (["画布", "原型画布"].includes(n.type) || drawing !== undefined)
-            throw Error("编辑画布图元请使用 draw_canvas");
+            throw Error("编辑画布图元请使用 draw_online_canvas");
           if (n.type === "文件夹" || content === undefined)
             throw Error("该类型不支持此正文操作");
           const old = n.html || "";
@@ -247,14 +249,14 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
     },
   });
   const tool = defineTool({
-    name: "write_file",
+    name: "write_online_file",
     description: createFileDescription,
     parameters: obj({
       path: str(),
       type: oneOf(Object.keys(types)),
       parent_id: opt(
         str({
-          description: "明确的父文件 ID，与绝对路径互斥；空字符串为根目录",
+          description: "在线父文件 ID；省略时从工作区根目录创建",
         }),
       ),
       content: opt(
@@ -263,44 +265,19 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
             "文档富文本 HTML、单文件 HTML 源码或画布 JSON（含 elements 数组）；省略创建空文件。",
         }),
       ),
-      source: opt(
-        str({
-          description:
-            "从本次 任务工作目录读取一个 UTF-8 文件，传文件名，与 content 二选一。",
-        }),
-      ),
     }),
     async execute({ path, type, parent_id, content, source }) {
       try {
         if (!Object.hasOwn(types, type)) throw Error("不支持的文件类型");
-        const absolute = path.startsWith("/");
-        if (absolute && parent_id !== undefined)
-          throw Error("绝对路径和 parent_id 请选择一种");
-        const names = (absolute ? path.slice(1) : path)
-          .split("/")
-          .map((s) => s.trim());
-        if (
-          names.some(
-            (s) => !s || s === "." || s === ".." || /[\x00-\x1f]/.test(s),
-          )
-        )
-          throw Error("路径需要有效文件名，不能包含空段、. 或 ..");
+        const names = relativeNames(path);
+        if (source !== undefined) throw Error("请用 content 提交正文，任务草稿使用 import_task_file_to_workspace");
         const working = effective(),
           pending = [];
-        let parent = absolute ? "" : (parent_id ?? currentId);
+        let parent = parent_id ?? "";
         if (parent && !working.some((n) => n.id === parent))
-          throw Error("父文件不存在，请使用 list_file 核对 ID");
-        if (content !== undefined && source !== undefined)
-          throw Error("请选择 content 或 source");
-        if (
-          type === "folder" &&
-          (content !== undefined || source !== undefined)
-        )
-          throw Error("文件夹不能设置正文");
-        const material =
-          source !== undefined
-            ? await readSource(source, type)
-            : { html: content };
+          throw Error("父文件不存在，请使用 list_online_files 核对 ID");
+        if (type === "folder" && content !== undefined) throw Error("文件夹不能设置正文");
+        const material = { html: content };
         if (
           material.html !== undefined &&
           Buffer.byteLength(material.html) > 12_000_000
@@ -347,10 +324,11 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
           parent = item.id;
         }
         entries.push(...pending);
+        const byId = new Map(working.map(node => [node.id, node]));
         return reply(
           JSON.stringify({
             id: parent,
-            path,
+            path: workspacePath(byId, byId.get(parent)),
             type,
             status: "已登记，任务完成后归档",
           }),
@@ -361,7 +339,7 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
     },
   });
   const list = defineTool({
-    name: "list_file",
+    name: "list_online_files",
     description:
       "列出工作区文件树，含名称、类型、ID、父 ID 和层级。默认从根目录开始；传 id 或 path 可只列该节点的后代。offset 和 limit 用于分页。",
     parameters: obj({ ...selector, offset: opt(int()), limit: opt(int()) }),
@@ -369,22 +347,25 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
       try {
         if (offset < 0 || limit < 1) throw Error("分页参数无效");
         const root =
-          id === undefined && (path === undefined || path === "/")
+          id === undefined && (path === undefined || path === "." || path === "./")
             ? ""
             : target(id, path).id;
         const children = new Map();
-        for (const node of effective()) {
+        const nodes = effective();
+        for (const node of nodes) {
           const key = node.parent || "";
           if (!children.has(key)) children.set(key, []);
           children.get(key).push(node);
         }
         const rows = [],
           seen = new Set([root]);
+        const byId = new Map(nodes.map(node => [node.id, node]));
+        const prefix = root ? workspacePath(byId, byId.get(root)) + "/" : "";
         const stack = (children.get(root) || [])
-          .map((node) => ({ node, depth: 0 }))
+          .map((node) => ({ node, depth: 0, path: prefix + node.title }))
           .reverse();
         while (stack.length) {
-          const { node, depth } = stack.pop();
+          const { node, depth, path } = stack.pop();
           if (seen.has(node.id)) continue;
           seen.add(node.id);
           rows.push({
@@ -393,9 +374,10 @@ export function workspaceCreation(nodes, currentId, readSource, current) {
             title: node.title,
             type: node.type,
             depth,
+            path,
           });
           for (const child of [...(children.get(node.id) || [])].reverse())
-            stack.push({ node: child, depth: depth + 1 });
+            stack.push({ node: child, depth: depth + 1, path: path + "/" + child.title });
         }
         const end = offset + Math.min(limit, 300);
         return reply(

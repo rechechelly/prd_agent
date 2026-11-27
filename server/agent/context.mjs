@@ -91,7 +91,7 @@ export function prepareReferences(docs, refs, files, scope) {
         },
       );
       const reader = { id: ref.id, ...(ref.version !== undefined && { version: ref.version, file: ref.file }) };
-      const reference = { title, read_file: reader };
+      const reference = { title, read_online_file: reader };
       if (imageFiles.length) reference.imageFiles = imageFiles;
       if (!ref.historyOnly && content.length <= remaining) {
         reference.content = content;

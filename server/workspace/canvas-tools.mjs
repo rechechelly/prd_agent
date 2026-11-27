@@ -8,13 +8,13 @@ export function drawCanvasTool(workspace) {
     isError,
   });
   return defineTool({
-    name: "draw_canvas",
+    name: "draw_online_canvas",
     description:
-      "按工作区画布 id 或 path 绘制可编辑图元。省略目标表示当前画布。可操作刚由 write_file 创建的画布。可分批提交：先提交状态框，再用 from/to 绑定箭头。同 id 更新，仅显式 remove 才删除。",
+      "按工作区画布 id 或 path 绘制可编辑图元。省略目标表示当前画布。可操作刚由 write_online_file 创建的画布。可分批提交：先提交状态框，再用 from/to 绑定箭头。同 id 更新，仅显式 remove 才删除。",
     parameters: obj({
       id: opt(str({ description: "目标画布文件 ID，与 path 二选一" })),
       path: opt(
-        str({ description: "目标画布的工作区路径，相对路径以当前文件为起点" }),
+        str({ description: "目标画布的工作区路径，相对路径以在线工作区根目录为起点" }),
       ),
       elements: opt(
         arr(
@@ -60,7 +60,7 @@ export function drawCanvasTool(workspace) {
         const doc = workspace.target(args.id, args.path);
         if (!boardType(doc.type))
           throw Error(
-            "目标不是画布。用 list_file 找到目标画布，或用 write_file 创建 canvas，再传入其 id 或 path。",
+            "目标不是画布。用 list_online_files 找到目标画布，或用 write_online_file 创建 canvas，再传入其 id 或 path。",
           );
         const scene = doc.scene || [];
         let patch;

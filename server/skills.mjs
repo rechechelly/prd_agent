@@ -114,6 +114,17 @@ export function skillRuntime(catalog, prior = []) {
       .trim();
     if (!body) throw Error("技能正文为空：" + name);
     active.add(name);
+    const previousTools = {
+      read_file: "read_online_file", write_file: "write_online_file",
+      edit_file: "edit_online_file", list_file: "list_online_files", draw_canvas: "draw_online_canvas",
+    };
+    const renames = Object.entries(previousTools)
+      .filter(([old]) => new RegExp("\\b" + old + "\\b").test(body))
+      .map(([old, current]) => old + " → " + current);
+    const toolNote = renames.length
+      ? "本技能使用旧版在线工具名，请按本轮工具清单调用：" + renames.join("，") +
+        "。路径相对于在线工作区根目录，创建子文件传 parent_id。任务草稿使用 import_task_file_to_workspace。\n"
+      : "";
     return (
       '<skill name="' +
       name +
@@ -122,7 +133,7 @@ export function skillRuntime(catalog, prior = []) {
       '">\n包内引用相对于 skills/' +
       name +
       "/。\n\n" +
-      body +
+      toolNote + body +
       "\n</skill>"
     );
   }

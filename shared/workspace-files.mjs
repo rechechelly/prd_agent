@@ -4,6 +4,17 @@ export const boardType = (type) => type === "画布" || type === "原型画布";
 export const generatedId = (doc, version, file) =>
   doc + "-" + version + "-" + file;
 
+// Online paths use visible file titles and always start at the workspace root.
+export function workspacePath(byId, node) {
+  const titles = [], seen = new Set();
+  while (node && !seen.has(node.id)) {
+    seen.add(node.id);
+    titles.push(node.title);
+    node = byId.get(node.parent);
+  }
+  return titles.reverse().join("/");
+}
+
 export function generatedFiles(owner, output) {
   const keys = [...new Set([...(output.fileOrder || []), "prd", "html"])];
   return keys

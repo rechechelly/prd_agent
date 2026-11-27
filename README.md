@@ -65,12 +65,15 @@ npm start
 
 | 操作对象 | 工具 | 标识和用途 |
 | --- | --- | --- |
-| 在线工作区 | `list_file`、`read_file`、`write_file`、`edit_file` | 使用文件 ID 或文件树路径。读取和修改默认定位当前文件。新增文件通过类型、路径或父级指定位置。 |
-| 在线画布和 PRD | `draw_canvas`、`embed_view_screenshots` | 按在线文件定位画布，或把配套 HTML 截图嵌入指定文档。 |
+| 在线工作区 | `list_online_files`、`read_online_file`、`write_online_file`、`edit_online_file` | 使用在线文件 ID 或相对整个工作区根目录的路径，例如 `需求/原型`。从 A 开启会话也可以读写 B。读取和修改省略目标时定位 A；在 A 下创建子文件时指定 `parent_id` 为 A 的 ID。 |
+| 在线画布和 PRD | `draw_online_canvas`、`embed_view_screenshots` | 按在线文件定位画布，或把配套 HTML 截图嵌入指定文档。 |
 | 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 制作本地草稿，用 Bash 运行脚本或解析二进制原件。 |
+| 草稿导入 | `import_task_file_to_workspace` | 将本次任务根目录中指定的 UTF-8 草稿提交至一个在线文档或 HTML，可指定目标 ID。 |
 | 技能与会话 | `skill_load`、`install_skill`、`compact_context` | 加载技能入口、按清单安装任务内的技能包、请求 Pi 压缩上下文。 |
 
-例如，`read_file({id:"A"})` 读在线文档 A。`read({path:"upload-….txt"})` 读上传附件的解析文本。`write({path:"draft.html",content:"…"})` 保存任务草稿。如需将该草稿提交给用户审阅，调用 `edit_file({id:"A",source:"draft.html"})`。若明确要求创建独立的 HTML，使用 `write_file({type:"html",path:"/原型",source:"draft.html"})`。
+工作区使用数据库保存文件树。在线工具只在这棵树里解析名称和 ID；操作系统绝对路径和 `..` 会被拒绝。比如 `read_online_file({path:"需求/说明"})` 读取在线文件，而 `read({path:"upload-….txt"})` 读取本次任务的附件。用 `write({path:"draft.html",content:"…"})` 保存任务草稿后，用 `import_task_file_to_workspace({id:"A",source:"draft.html"})` 将其提交到在线文件 A。直接修改在线正文可用 `edit_online_file({id:"A",old_text:"原句",content:"新句"})`。
+
+从 v1.0.3 迁移自定义技能时，请将 `read_file`、`write_file`、`edit_file`、`list_file`、`draw_canvas` 分别改为 `read_online_file`、`write_online_file`、`edit_online_file`、`list_online_files`、`draw_online_canvas`。已有会话的执行记录保留当时的工具名。
 
 新增工具时，在 `shared/agent-catalog.mjs` 声明用途和分组，并在 `server/agent/tools.mjs` 注册。在线文件工具由 `server/workspace/` 实现；Pi 原生文件工具的任务路径适配在 `server/runtime/file-tools.mjs`。工具错误进入 Pi 工具结果，模型可据此修正并重试。
 

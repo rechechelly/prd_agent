@@ -1,11 +1,11 @@
 import { defineTool } from "@earendil-works/pi-durable";
-import { obj, str } from "@earendil-works/pi-schema";
+import { obj, str, opt, bool } from "@earendil-works/pi-schema";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
 import { drawCanvasTool } from "../workspace/canvas-tools.mjs";
 import { renderDelivery } from "../render.mjs";
 import { discoverSkills } from "../skills.mjs";
 import { taskFileTools } from "../runtime/file-tools.mjs";
-import { taskBash } from "../runtime/task-environment.mjs";
+import { taskBash, readScratchFile } from "../runtime/task-environment.mjs";
 import { diagnostic } from "./stream.mjs";
 export const toolReply = (text, isError = false) => ({
   output: [{ type: "text", text }],
@@ -46,6 +46,20 @@ export function createAgentTools({
     ...creation.tools,
     ...taskFileTools(env.cwd, inputs),
     defineTool({
+      name: "import_task_file_to_workspace", description: toolDescriptions.import_task_file_to_workspace,
+      parameters: obj({ source: str(), id: opt(str()), append: opt(bool()) }),
+      async execute({ source, id, append }) {
+        try {
+          const target = creation.target(id);
+          if (!["文档", "交互 HTML", "需求文档", "备忘录"].includes(target.type))
+            throw Error("请选择在线文档或 HTML 作为导入目标");
+          const content = await readScratchFile(env, source);
+          const edit = creation.tools.find(tool => tool.name === "edit_online_file");
+          return edit.execute({ id: target.id, content, append });
+        } catch (error) { return toolReply(error.message, true); }
+      },
+    }),
+    defineTool({
       name: "embed_view_screenshots",
       description: toolDescriptions.embed_view_screenshots,
       parameters: obj({ document_id: str(), html_id: str() }),
@@ -60,7 +74,7 @@ export function createAgentTools({
             html: page.html,
           });
           return creation.tools
-            .find((tool) => tool.name === "edit_file")
+            .find((tool) => tool.name === "edit_online_file")
             .execute({ id: document.id, content: result.prd });
         } catch (error) {
           return toolReply(error.message, true);
@@ -87,9 +101,9 @@ export function createAgentTools({
     compactTool,
   ];
   const tools = scope ? availableTools.filter(tool =>
-    ["read", "read_file", "list_file", "skill_load", "compact_context"].includes(tool.name)
+    ["read", "read_online_file", "list_online_files", "skill_load", "compact_context"].includes(tool.name)
   ).concat(defineTool({
-    name: "edit_file",
+    name: "edit_online_file",
     description: "仅替换本次划词选区。content 是完整的新选区片段，无需提供全文或目标 ID。保留文档片段中的原有标签。HTML 源码选区按原样替换。",
     parameters: obj({ content: str() }),
     async execute({ content }) {
