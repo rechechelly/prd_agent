@@ -1,66 +1,59 @@
+import { cursorEdits } from "../../shared/online-file-edit.mjs";
 import { fault } from "../storage.mjs";
 import { complete } from "./client.mjs";
 
-export function completionMessages(title, { before, after, editableAfter, previous, codeLanguage, blockPath, atBlockEnd }) {
+export function completionMessages(title, input) {
+  const { before, after, editableAfter, codeLanguage, blockPath, cursorAt, atFileEnd, previous } = input;
   const code = typeof codeLanguage === "string";
   return [
     {
       role: "system",
       content: [
-        "你在用户的光标处提供一个短小、可直接采纳的编辑建议。before 是光标前的只读上下文，after 是光标后的上下文。editableAfter 是允许修改的连续后文。",
-        '如果光标前有半个词、未完成的句子或代码，优先补齐；如果后文有明显错误，给出最小修正。返回 JSON，对象的三个字符串依次表示跳过的后文 keep、删除的原文 remove、写入的内容 insert。keep + remove 必须逐字匹配 editableAfter 的开头，包括空白。',
-        '例如光标前是“点此查”，后面缺少宾语，可返回 {"keep":"","remove":"","insert":"看详情"}。如果后文是“请确人。”，可返回 {"keep":"请确","remove":"人","insert":"认"}。不要复述已有后文。上下文完整且没有合适建议时返回 null。',
+        "你是编辑器中的光标补全。根据标题和上下文写出下一小段自然、有用的内容。before 是只读前文，after 是后文参考，只允许在光标处插入或修改 editableAfter。",
+        '只返回纯 JSON 对象 {"list":[{"old_text":"","new_text":"..."}]}，不写解释或外层 Markdown 围栏。old_text 为空表示在光标插入，最多一项。其余 old_text 必须在原始 editableAfter 中逐字唯一匹配，各项互不重叠。删除时 new_text 为空。',
+        'new_text 将完整替代 old_text。保留原文中正确的文字，插入时不要把整句当作锚点。例如光标后的“户点击保存”缺少首字，返回 {"list":[{"old_text":"","new_text":"用"}]}。',
+        "补齐未完成的词句或代码，留意已有后文，避免重复。文末或空行可根据前文和标题接着写下一句、下一段或下一个条目。无需续写或纠错时返回 {\"list\":[]}。",
         code
-          ? "insert 写原始代码，保持语言、缩进和换行，不要加 Markdown 围栏。"
-          : "insert 使用 Markdown。根据上下文续写句子，也可以换行新增段落、标题、有序列表、表格或代码块。需要另起一段时保留开头的换行。",
-        previous ? "用户要求换一版，请提供不同的建议。" : "",
+          ? "cursorAt 表示当前代码行内的位置。new_text 是可直接插入的原始代码，保留语言、缩进、空白和换行。"
+          : "cursorAt 表示当前段落内的位置。new_text 使用 Markdown。句中续写直接接字，需要另起段落或列表时保留开头的换行。",
+        input.format === "list" ? "可一次修正多处有根据的错误，保持建议简短。" : "最多返回一项。",
+        input.trigger === "manual" ? "用户主动请求建议，请给出有上下文依据的下一步。遇到完整句号可以另起一句，避免虚构需求和事实。" : "",
+        previous ? "用户要求换一版，请给出与上次不同的建议。" : "",
       ].filter(Boolean).join("\n"),
     },
     {
       role: "user",
       content: JSON.stringify({
-        title, before: String(before || "").slice(-3500), after: String(after || "").slice(0, 1000),
-        editableAfter: String(editableAfter || "").slice(0, 1000),
-        ...(typeof blockPath === "string" && { blockPath: blockPath.slice(0, 240), atBlockEnd: atBlockEnd === true }),
+        title: String(title || "").slice(0, 240), before: String(before || "").slice(-3500),
+        after: String(after || "").slice(0, 1000), editableAfter: String(editableAfter || "").slice(0, 1000),
+        ...(typeof blockPath === "string" && { blockPath: blockPath.slice(0, 240) }),
+        ...(typeof cursorAt === "string" && { cursorAt: cursorAt.slice(0, 12), atFileEnd: atFileEnd === true }),
         ...(code && { codeLanguage: codeLanguage.slice(0, 80) }),
-        ...(previous && { previousSuggestion: String(previous.insert ?? previous).slice(0, 4000) }),
+        ...(previous && { previousSuggestion: JSON.stringify(previous).slice(0, 4000) }),
       }),
     },
   ];
 }
 
-export function completionEdit(output, editableAfter = "") {
-  let edit;
-  try {
-    const fenced = /^\s*`{3}(?:json)?\s*\n([\s\S]*?)\n`{3}\s*$/i.exec(output);
-    edit = JSON.parse(fenced?.[1] ?? output);
-  } catch {
-    fault("补全模型返回的编辑建议不完整，请重新生成", 502);
-  }
-  if (edit === null) return null;
-  if (typeof edit !== "object") fault("补全建议格式有误，请重新生成", 502);
-  const { keep = "", remove, insert } = edit;
-  if (![keep, remove, insert].every(s => typeof s === "string"))
-    fault("补全建议缺少文本字段，请重新生成", 502);
-  if (remove === insert) return null;
-  if (!String(editableAfter).slice(0, 1000).startsWith(keep + remove))
-    fault("补全建议与光标后的原文不匹配，请重新生成", 502);
-  return { keep, remove, insert };
-}
-
 export async function suggestCompletion(config, title, input, signal) {
-  const messages = completionMessages(title, input);
-  const request = () => complete(config, messages, 1024, signal);
-  const first = await request();
-  let feedback;
+  const output = await complete(config, completionMessages(title, input), 1024, signal, { json: true });
+  const suffix = String(input.editableAfter || "").slice(0, 1000);
+  let edits;
   try {
-    const edit = completionEdit(first, input.editableAfter);
-    if (edit || input.trigger !== "manual") return edit;
-    feedback = "用户主动请求了补全。请再检查光标处能否自然续写或纠错；确实没有合适建议时返回 null。";
+    edits = cursorEdits(suffix, JSON.parse(output)?.list);
   } catch (error) {
-    feedback = error.message + "。请核对三个字段和可编辑后文，无法给出可靠修改时返回 null。";
+    // A well-formed suggestion can still have no applicable range at this caret.
+    if (!(error instanceof RangeError))
+      fault(error instanceof SyntaxError ? "补全模型未返回有效 JSON" : "补全建议无效：" + error.message, 502);
+    edits = [];
   }
-  signal?.throwIfAborted();
-  messages.push({ role: "assistant", content: first }, { role: "user", content: feedback });
-  return completionEdit(await request(), input.editableAfter);
+  if (input.format === "list") return { list: edits.map(({ from, to, content }) => ({
+    old_text: suffix.slice(from, to), new_text: content,
+  })) };
+  // Cached editors predate list support and display a single suggestion.
+  const first = edits[0];
+  if (input.editableAfter === undefined) return { text: first?.content ?? "" };
+  return { edit: first ? {
+    keep: suffix.slice(0, first.from), remove: suffix.slice(first.from, first.to), insert: first.content,
+  } : null };
 }

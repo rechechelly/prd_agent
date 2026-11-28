@@ -197,6 +197,12 @@
 .axisDelete:hover { background: #fff0f1; }
 .textSelectionBar:not([hidden]) { display: flex; padding: 3px; gap: 2px; }
 .textSelectionBar button { min-width: 28px; padding: 4px; }
+.fontColorControl {
+  position: relative; display: grid; place-items: center; min-width: 28px; font-weight: 650;
+  text-decoration: underline 3px var(--font-color, currentColor); text-underline-offset: 3px;
+}
+.fontColorControl select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.fontColorControl:is(:hover, :focus-within) { background: #eeeafa; border-radius: 4px; }
 .textSelectionBar button:hover, .textSelectionBar button[aria-pressed=true] { color: #504197; background: #eeeafa; }
 .textSelectionBar [data-mark=bold] { font-weight: 750; }
 .textSelectionBar [data-mark=italic] { font-style: italic; }

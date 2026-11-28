@@ -61,14 +61,15 @@ export function installSourceEditor({ completion, onEdit, quote }) {
     const body = schema.node("source", null, value ? schema.text(value) : null);
     return EditorState.create({ doc: schema.node("doc", null, body), plugins });
   }
-  let numberedDoc, numberedAddition;
+  let numberedDoc, numberedAdditions = [];
   function gutter() {
-    const added = view.dom.querySelector(".completionAddition");
-    if (numberedDoc === view.state.doc && numberedAddition === added) return;
+    const additions = [...view.dom.querySelectorAll(".completionAddition")];
+    if (numberedDoc === view.state.doc && numberedAdditions.length === additions.length &&
+        additions.every((node, i) => numberedAdditions[i] === node)) return;
     numberedDoc = view.state.doc;
-    numberedAddition = added;
+    numberedAdditions = additions;
     const lines = numberedDoc.textContent.split("\n").map((_, i) => String(i + 1));
-    if (added) {
+    for (const added of additions.toReversed()) {
       const count = added.textContent.split("\n").length - 1;
       const pos = view.posAtDOM(added, 0);
       const line = view.state.doc.textBetween(1, pos).split("\n").length;
@@ -80,6 +81,15 @@ export function installSourceEditor({ completion, onEdit, quote }) {
     state: stateFor(""),
     attributes: { role: "textbox", "aria-label": "HTML 源码", "aria-multiline": "true",
       spellcheck: "false", autocapitalize: "off", autocorrect: "off" },
+    handleDoubleClick(view, pos) {
+      const doc = view.state.doc, text = doc.textContent;
+      const offset = Math.max(0, Math.min(pos - 1, text.length));
+      const from = offset ? text.lastIndexOf("\n", offset - 1) + 1 : 0;
+      const newline = text.indexOf("\n", offset);
+      const to = newline < 0 ? text.length : newline;
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, from + 1, to + 1)));
+      return true;
+    },
     handlePaste(view, event) {
       const text = event.clipboardData?.getData("text/plain");
       if (text == null) return false;
@@ -87,10 +97,12 @@ export function installSourceEditor({ completion, onEdit, quote }) {
       return true;
     },
     dispatchTransaction(tr) {
-      const before = view.state.doc;
       view.updateState(view.state.apply(tr));
       if (tr.docChanged) {
-        source = updateSource(source, before.textContent, view.state.doc.textContent);
+        // Update each disjoint range separately so line endings between edits survive.
+        for (const [i, before] of tr.docs.entries()) {
+          source = updateSource(source, before.textContent, (tr.docs[i + 1] || tr.doc).textContent);
+        }
         onEdit(source);
       }
       gutter();

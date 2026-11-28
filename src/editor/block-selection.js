@@ -4,7 +4,7 @@ import { closeHistory } from "@tiptap/pm/history";
 
 export function installBlockSelection(editor) {
   const root = editor.view.dom;
-  const scroll = root.closest("#paperScroll");
+  const scroll = root.closest("#paperScroll"), paper = root.closest("#paper");
   const key = new PluginKey("blockRange");
   const box = document.createElement("div");
   box.className = "blockMarquee";
@@ -148,34 +148,15 @@ export function installBlockSelection(editor) {
       if (
         e.button !== 0 ||
         e.pointerType === "touch" ||
-        !scroll.contains(e.target) ||
-        !root.getClientRects().length
-      )
-        return;
-      if (
-        e.target.closest(
-          "button,input,textarea,td,th,img,[data-resize-container]",
-        )
+        (e.target !== paper && e.target !== scroll)
       )
         return;
       const bounds = root.getBoundingClientRect();
-      if (e.clientY < bounds.top - 6 || e.clientY > bounds.bottom + 12) return;
-      if (root.contains(e.target) && e.target !== root) {
-        // Leave drags starting on glyphs to the browser's text selection.
-        const range = document.createRange();
-        range.selectNodeContents(e.target);
-        if (
-          [...range.getClientRects()].some(
-            (r) =>
-              e.clientX >= r.left - 2 &&
-              e.clientX <= r.right + 2 &&
-              e.clientY >= r.top &&
-              e.clientY <= r.bottom,
-          )
-        )
-          return;
-      }
-      if (!root.contains(e.target)) e.preventDefault();
+      if (!bounds.height || e.clientY < bounds.top || e.clientY >= bounds.bottom ||
+          (e.clientX >= bounds.left && e.clientX < bounds.right)) return;
+      const viewportLeft = scroll.getBoundingClientRect().left + scroll.clientLeft;
+      if (e.clientX < viewportLeft || e.clientX >= viewportLeft + scroll.clientWidth) return;
+      e.preventDefault();
       drag = {
         x: e.clientX,
         y: e.clientY,

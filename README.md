@@ -38,8 +38,8 @@ npm start
 
 点击工作台左上角的 ☰ 可以展开或收起文件目录。目录中的 ＋ 可以新建文件夹、文档、原型画布和 HTML。手动编辑会自动保存到当前在线文件，连续输入时默认在停顿 600 毫秒后保存。Agent 对已有文件提出的修改可以先预览，点击 Keep 后写入同一文件。
 
-- **文档**支持图文、表格、行级工具栏、划词与框选格式化。有 H1–H4 标题时，文档区左上角的箭头可随时展开或收起章节目录。打开 AI 补全后，输入会触发 Markdown 续写或纠错建议，生成时光标旁会显示「补全中…」。编辑器用红色标出将删除的原文、绿色标出新增内容。双按 Tab 立即生成或换一版，单按 Tab 采纳，Esc 取消。标题、列表和代码块按文档格式插入。
-- **HTML** 是单文件原型。Raw Text 提供语法高亮、划词悬浮工具栏和行内代码补全，与文档共用补全开关、模型和快捷键。Agent 提议的源码修改可在渲染模式下预览。可以逐处保留或放弃修改。
+- **文档**支持图文、表格、行级工具栏和选中文字的浮动工具栏。可在工具栏的 A 菜单设置字体颜色或恢复默认颜色。从正文列两侧空白处拖动可以框选多个内容块。有 H1–H4 标题时，文档区左上角的箭头可随时展开或收起章节目录。打开 AI 补全后，输入会触发 Markdown 续写或纠错建议，生成时光标旁会显示「补全中…」。编辑器用红色标出将删除的原文、绿色标出新增内容。双按 Tab 立即生成或换一版，单按 Tab 采纳，Esc 取消。标题、列表和代码块按文档格式插入。
+- **HTML** 是单文件原型。Raw Text 支持双击选中当前源码行，提供语法高亮、划词悬浮工具栏和行内代码补全，与文档共用补全开关、模型和快捷键。Agent 提议的源码修改可在渲染模式下预览。可以逐处保留或放弃修改。
 - **原型画布**支持编辑图形和连线。Agent 可以用文件路径或 ID 定位画布，修改内容可在工作台预览。
 - **Agent 对话**默认携带当前文件上下文。“给这个页面加字段”“继续写这一节”等请求优先在当前文件上提出修改。需要独立交付时，可以明确要求创建新的 PRD、HTML 或画布。对话可以粘贴图片，或点击回形针一次上传多个图片、PDF、Word、Excel 附件。在文件目录点击文件旁的引用按钮或将文件拖入对话，可将其作为当前会话的引用。外部 API 的请求地址和要求可直接写在消息中。工具执行详情可展开查看。正在处理时仍可发送消息，待发送队列显示在输入框上方。默认按发送顺序执行。点击任一条的「立即发送」会中断当前执行，保留工具记录并优先处理该条消息。其余消息保持原有顺序。若产生待采纳修改，处理后队列继续。
 - **划词提问**支持文档正文和 HTML 的 Raw Text。选中文字后点击选区旁的「问 Agent」，或将选区拖入助手，输入框会显示选区摘要。服务端核对源文件版本和字符区间，修改建议只应用到这段选区。
@@ -58,7 +58,7 @@ npm start
 | 需要修改的行为 | 入口 |
 | --- | --- |
 | Agent 系统指令、文件上下文、用户消息、错误纠正和截断续写提示 | [server/agent/prompts.mjs](server/agent/prompts.mjs) 中的 `agentInstructions`、`agentInput`、`continuationInput` |
-| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标前后文、可改写的后文、所在块和代码语言。模型以 JSON 返回原样跳过的前缀 `keep`、删除原文 `remove` 和新增内容 `insert`。服务端检查前两项能否连续匹配光标后的原文。调用端在 [src/editor/inline-completion.js](src/editor/inline-completion.js)。 |
+| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标所在段落或代码行的位置、只读前文、后文及其中可修改的范围。模型直接返回 `{"list":[{"old_text":"原文","new_text":"新内容"}]}`。空的 `old_text` 表示在光标处插入，其余各项须唯一匹配可编辑后文且互不重叠。文档支持 Markdown，源码保留字面文本。调用端在 [src/editor/inline-completion.js](src/editor/inline-completion.js)。 |
 | 在线正文修改 | Tab 采纳和 `edit_online_file` 共用 [shared/online-file-edit.mjs](shared/online-file-edit.mjs)。两个编辑器将候选绑定到文件 ID、正文快照和光标位置。预览由编辑器装饰层绘制。采纳时以一次可撤销的事务写入 Markdown 或源码，后续未标记的内容保留。 |
 | 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent/run.mjs](server/agent/run.mjs) 的 `runAgent` |
 | 模型协议、上下文窗口、输出 token 和供应商适配 | [server/agent/model.mjs](server/agent/model.mjs)；普通补全和模型发现在 [server/models/client.mjs](server/models/client.mjs) |
@@ -80,7 +80,7 @@ npm start
 | Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
 | 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。连续 2 次续写都没有推进文件修改时停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
 | Agent 模型预算 | 会话上下文默认 200,000 token，最低 32,000。接近窗口上限时，Pi 会压缩可归纳的旧消息。`XUYE_MAX_OUTPUT_TOKENS` 是单次输出预算，默认 32,768，可设置为 1–127,999，实际请求还受剩余上下文约束 | `shared/chat-sessions.mjs`、`server/agent/model.mjs`、`server/agent/policy.mjs` |
-| 文档及源码补全 | 停止输入 550 ms 自动请求，280 ms 内双按 Tab 立即生成或换一版。请求截取光标前 3,500、后 1,000 个 UTF-16 代码单元，单次输出预算为 1,024 token。自动补全遇到空建议时结束；主动补全首次无建议或编辑格式、定位有误时最多再请求一次 | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
+| 文档及源码补全 | 输入停顿 350 ms 后自动请求，280 ms 内双按 Tab 立即生成或换一版。每次触发直接请求补全模型一次，发送光标前最多 3,500、后最多 1,000 个 UTF-16 代码单元，输出预算为 1,024 token。返回空列表时显示暂无建议，Tab 可一次采纳整批修改 | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
 | 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
 | 对话输入框 | 可拖动上边缘，也可聚焦边缘后按上下键，每次调整 16 px。默认高度 70 px，下限 62 px，上限取 540 px 和窗口高度 52% 中的较小值。偏好保存在浏览器的 `xuye.composerHeight` | `src/chat/composer.js` |
 

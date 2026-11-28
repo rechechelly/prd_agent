@@ -75,13 +75,14 @@ export async function agentRoute(url, req, res, files, chats, input) {
     fault("无此接口", 404);
   // Old bookmarks may still carry task-scoped API credentials. New callers use their message.
   delete input.externalApi;
-  const file = resolveChatFile(files, input.doc, input.prdVersion);
   if (path === "/api/agent" && input.mode === "complete") {
     const controller = new AbortController();
     res.once("close", () => controller.abort());
-    const edit = await suggestCompletion(modelConfig("completion", input.modelId), file.title, input, controller.signal);
-    return input.editableAfter === undefined ? { text: edit?.insert ?? "" } : { edit };
+    // A new file can request suggestions before its first workspace save.
+    const title = typeof input.title === "string" ? input.title : resolveChatFile(files, input.doc, input.prdVersion).title;
+    return suggestCompletion(modelConfig("completion", input.modelId), title, input, controller.signal);
   }
+  const file = resolveChatFile(files, input.doc, input.prdVersion);
   if (path === "/api/agent" && input.mode !== "chat") fault("请通过 Agent 对话创建文件");
   const session = findSession(file, input.chatId);
   if (!session) fault("会话不存在，请刷新工作区", 409);

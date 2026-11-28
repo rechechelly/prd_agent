@@ -17,7 +17,10 @@ function floatingToolbar(label) {
 }
 
 function placeToolbar(bar, rect, bounds, pinAtTop = false) {
-  if (!rect?.height || rect.bottom <= bounds.top || rect.top >= bounds.bottom) return;
+  if (!rect?.height || rect.bottom <= bounds.top || rect.top >= bounds.bottom) {
+    bar.hidden = true;
+    return;
+  }
   bar.hidden = false;
   const x = (Math.max(bounds.left, rect.left) + Math.min(bounds.right, rect.right) - bar.offsetWidth) / 2;
   bar.style.left = Math.max(bounds.left + 3, Math.min(x, bounds.right - bar.offsetWidth - 3)) + "px";
@@ -78,18 +81,46 @@ export function installTextToolbar(editor, button, blocks, quoteSelection) {
     control.dataset.mark = mark;
     bar.append(control);
   }
+  const colorControl = document.createElement("label");
+  colorControl.className = "fontColorControl";
+  colorControl.title = "字体颜色";
+  colorControl.textContent = "A";
+  const colors = document.createElement("select");
+  colors.ariaLabel = "字体颜色";
+  for (const [name, value] of [
+    ["默认颜色", ""], ["红色", "#b42318"], ["橙色", "#ad5000"], ["绿色", "#157347"],
+    ["蓝色", "#175ac2"], ["紫色", "#7145a4"], ["灰色", "#626977"],
+  ]) {
+    const option = new Option(name);
+    option.style.color = value;
+    option.value = option.style.color;
+    colors.add(option);
+  }
+  colors.onchange = () => {
+    const { from, to } = blocks.range || editor.state.selection;
+    if (from === to) return;
+    const tr = editor.state.tr;
+    const mark = editor.schema.marks.textColor;
+    if (colors.value) tr.addMark(from, to, mark.create({ color: colors.value }));
+    else tr.removeMark(from, to, mark);
+    editor.view.dispatch(tr);
+    editor.view.focus();
+  };
+  colorControl.append(colors);
+  bar.append(colorControl);
   const remove = button("删除所选内容", "删除", () => blocks.apply(null));
   bar.append(remove, button("针对选区提问", "问 Agent", () => quoteSelection(blocks.range || editor.state.selection)));
   function refresh() {
     const { selection } = editor.state;
     const bounds = root.closest("#paperScroll").getBoundingClientRect();
-    bar.hidden = true;
     if (
       !root.getClientRects().length ||
       blocks.dragging ||
       (!editor.view.hasFocus() && !bar.contains(document.activeElement))
-    )
+    ) {
+      bar.hidden = true;
       return;
+    }
     const range = blocks.range;
     remove.hidden = !range;
     let rect;
@@ -105,6 +136,14 @@ export function installTextToolbar(editor, button, blocks, quoteSelection) {
     }
     placeToolbar(bar, rect, bounds, selection instanceof AllSelection || range);
     if (bar.hidden) return;
+    const { from, to } = range || selection;
+    const selectedColors = new Set();
+    editor.state.doc.nodesBetween(from, to, node => {
+      if (node.isText) selectedColors.add(editor.schema.marks.textColor.isInSet(node.marks)?.attrs.color || "");
+    });
+    const color = selectedColors.size === 1 ? [...selectedColors][0] : undefined;
+    colors.value = color ?? "mixed";
+    colorControl.style.setProperty("--font-color", color || "currentColor");
     for (const b of bar.querySelectorAll("[data-mark]")) {
       const mark = b.dataset.mark;
       if (!range) {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { boardType, onlineFileTypes, workspacePath } from "../../shared/workspace-files.mjs";
-import { editOnlineFileBody } from "../../shared/online-file-edit.mjs";
+import { editOnlineFileBody, textEditOperations } from "../../shared/online-file-edit.mjs";
 import { resolveFile } from "../../shared/assistant-context.mjs";
 import {
   describeCanvas,
@@ -302,11 +302,7 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
       if (n.type === "文件夹" || (content === undefined && list === undefined))
         throw Error("该类型不支持此正文操作");
       const edits = list
-        ? list.map((item, index) => {
-            if (typeof item?.old_text !== "string" || typeof item.new_text !== "string")
-              throw Error(`第 ${index + 1} 项需要 old_text 和 new_text 字符串`);
-            return { oldText: item.old_text, content: item.new_text };
-          })
+        ? textEditOperations(list)
         : [{ content, oldText: old_text, append }];
       update.html = editOnlineFileBody(n.id, n.html || "", edits);
       checkOnlineFileSize(update.html);

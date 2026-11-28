@@ -1,7 +1,8 @@
 import { fault } from "../storage.mjs";
 
-export async function complete(p, messages, max_tokens = 100, signal) {
+export async function complete(p, messages, max_tokens = 100, signal, { json = false } = {}) {
   let r;
+  const host = new URL(p.base).hostname;
   try {
     r = await fetch(p.base + "/chat/completions", {
       method: "POST",
@@ -15,23 +16,28 @@ export async function complete(p, messages, max_tokens = 100, signal) {
         model: p.model,
         messages,
         max_tokens,
-        ...(new URL(p.base).hostname === "api.deepseek.com"
+        ...(json && ["api.deepseek.com", "api.openai.com"].includes(host)
+          ? { response_format: { type: "json_object" } } : {}),
+        ...(host === "api.deepseek.com"
           ? { thinking: { type: "disabled" } }
           : {}),
       }),
     });
   } catch {
+    signal?.throwIfAborted();
     fault("未能连接模型接口，请检查地址、网络及超时设置", 502);
   }
   if (!r.ok)
     fault("模型接口返回 HTTP " + r.status + "，请核对密钥、模型和余额", 502);
-  const message = (await r.json()).choices?.[0]?.message;
+  const choice = (await r.json()).choices?.[0];
+  const message = choice?.message;
   if (
     !message ||
     typeof message.content !== "string" ||
     !message.content.trim()
   )
-    fault("模型没有返回可用文本", 502);
+    fault(choice?.finish_reason === "length" && json
+      ? "补全模型已用尽单次输出预算，请切换模型后重试" : "模型没有返回可用文本", 502);
   return message.content;
 }
 

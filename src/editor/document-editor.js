@@ -1,4 +1,4 @@
-import { Editor, Extension } from "@tiptap/core";
+import { Editor, Extension, Mark } from "@tiptap/core";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
 import { closeHistory } from "@tiptap/pm/history";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -10,6 +10,13 @@ import { DocumentImage, insertDocumentImage } from "./document-image";
 import { installBlockTools } from "./block-tools";
 import { installDocumentOutline } from "./document-outline";
 
+const TextColor = Mark.create({
+  name: "textColor",
+  addAttributes: () => ({ color: {} }),
+  parseHTML: () => [{ style: "color", getAttrs: color => ({ color }) }],
+  renderHTML: ({ mark }) => ["span", { style: "color: " + mark.attrs.color }, 0],
+});
+
 export function createDocumentEditor({ completion, getFile, quoteSelection, onChange }) {
   function addImage(file) {
     const owner = getFile();
@@ -19,6 +26,7 @@ export function createDocumentEditor({ completion, getFile, quoteSelection, onCh
     element: $("editor"),
     extensions: [
       StarterKit.configure({ link: { openOnClick: false } }),
+      TextColor,
       TaskList,
       TaskItem.configure({ nested: true }),
       TableKit.configure({ table: { resizable: true } }),
