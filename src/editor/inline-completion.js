@@ -30,7 +30,7 @@ function offlineEdit(context, title) {
   return [{ old_text: "", new_text: insert }];
 }
 
-export function editorCompletion({ getFile, enabled, markdown, status }) {
+export function editorCompletion({ getFile, isActive, autoEnabled, markdown, status }) {
   const key = new PluginKey("inlineCompletion");
   let view, debounce, tab, controller, candidate, previous, composing = false, accepting = false;
   function reset() {
@@ -47,7 +47,7 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
       view.dispatch(view.state.tr.setMeta(key, DecorationSet.empty));
   }
   function eligible() {
-    return enabled() && view?.hasFocus() && view.editable && !view.composing && !composing &&
+    return isActive() && view?.hasFocus() && view.editable && !view.composing && !composing &&
       view.state.selection instanceof TextSelection && view.state.selection.empty;
   }
   async function generate(manual) {
@@ -129,7 +129,7 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     }
   }
   function schedule() {
-    if (eligible()) debounce = setTimeout(() => generate(false), 350);
+    if (autoEnabled() && eligible()) debounce = setTimeout(() => generate(false), 350);
   }
   function accept(result) {
     if (result !== candidate) return;
@@ -147,6 +147,8 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     finally { accepting = false; }
   }
   function keydown(_, event) {
+    // A delayed single Tab is replayed through the remaining editor keymaps.
+    if (event.defaultPrevented) return false;
     if (event.key === "Escape") { clear(); return false; }
     if (event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || !eligible()) {
       clearTimeout(tab);
@@ -179,8 +181,9 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     },
     props: {
       decorations: state => key.getState(state),
+      handleKeyDown: keydown,
       handleDOMEvents: {
-        keydown, blur: () => { clear(); return false; },
+        blur: () => { clear(); return false; },
         pointerdown: () => { clear(); return false; },
         compositionstart: () => { composing = true; clear(); return false; },
         compositionend: () => {

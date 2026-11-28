@@ -729,9 +729,9 @@ function create(parent = "") {
 let completionEnabled = true;
 function completionStatus(message = "", error) {
   const button = $("completionToggle");
-  button.textContent = message || (completionEnabled ? "AI 补全 · 开" : "AI 补全 · 关");
+  button.textContent = message || (completionEnabled ? "自动补全 · 开" : "自动补全 · 关");
   button.setAttribute("aria-pressed", String(completionEnabled));
-  button.title = error || "补全当前文件的光标后文 · 单按 Tab 采纳，双按 Tab 生成或换一版，Esc 取消";
+  button.title = error || "开启后在输入停顿时自动补全。随时双按 Tab 获取或更换建议，单按 Tab 采纳，Esc 取消。";
 }
 function mountCompletionControls(mount, visible) {
   for (const id of ["completionToggle", "completionModel"]) {
@@ -740,15 +740,15 @@ function mountCompletionControls(mount, visible) {
     if (visible && control.parentNode !== mount) mount.insertBefore(control, $("assistantToggle"));
   }
 }
-const commonCompletion = { getFile: () => doc, status: completionStatus };
+const commonCompletion = { getFile: () => doc, autoEnabled: () => completionEnabled, status: completionStatus };
 const completion = editorCompletion({
   ...commonCompletion,
-  enabled: () => completionEnabled && page === "work" && doc?.type === "文档" && !$("editor").hidden,
+  isActive: () => page === "work" && doc?.type === "文档" && !$("editor").hidden,
   markdown: (...args) => markdownInsertion(editor, ...args),
 });
 const codeCompletion = editorCompletion({
   ...commonCompletion,
-  enabled: () => completionEnabled && page === "result" && doc?.type === "交互 HTML" && rawMode && !$("htmlSourceEditor").hidden,
+  isActive: () => page === "result" && doc?.type === "交互 HTML" && rawMode && !$("htmlSourceEditor").hidden,
 });
 function hideSuggestion() { completion.clear(); codeCompletion.clear(); }
 function documentBody(html) {
