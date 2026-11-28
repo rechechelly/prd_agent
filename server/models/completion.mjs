@@ -18,7 +18,9 @@ export function completionMessages(title, input) {
           ? 'cursorAt 表示当前代码行内的位置。续写未完成的标签、标识符或字符串时，old_text 为空，new_text 只写光标后缺少的代码，保留缩进和换行。例如 before 以 <title 结尾、下一行已有 <style>，可返回 {"list":[{"old_text":"","new_text":">页面标题</title>"}]}。'
           : "cursorAt 表示当前段落内的位置。new_text 使用 Markdown。句中续写直接接字，需要另起段落或列表时保留开头的换行。",
         input.format === "list" ? "可一次修正多处有根据的错误，保持建议简短。" : "最多返回一项。",
-        input.trigger === "manual" ? "用户主动请求建议，请给出有上下文依据的下一步。遇到完整句号可以另起一句，避免虚构需求和事实。" : "",
+        code ? "返回前把建议放回 before 和 after 之间检查语法，保留补全所需的结束符。如果后文没有结束标签的 >，在建议中补齐。" : "",
+        input.trigger === "manual" ? (code ? "用户主动请求代码补全，请优先补齐光标处的语法。"
+          : "用户主动请求建议，请给出有上下文依据的下一步。遇到完整句号可以另起一句，避免虚构需求和事实。") : "",
         previous ? "用户要求换一版，请给出与上次不同的建议。" : "",
       ].filter(Boolean).join("\n"),
     },
