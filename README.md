@@ -58,7 +58,7 @@ npm start
 | 需要修改的行为 | 入口 |
 | --- | --- |
 | Agent 系统指令、文件上下文、用户消息、错误纠正和截断续写提示 | [server/agent/prompts.mjs](server/agent/prompts.mjs) 中的 `agentInstructions`、`agentInput`、`continuationInput` |
-| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标所在段落或代码行的位置、只读前文、后文及其中可修改的范围。模型直接返回 `{"list":[{"old_text":"原文","new_text":"新内容"}]}`。空的 `old_text` 表示在光标处插入，其余各项须唯一匹配可编辑后文且互不重叠。文档支持 Markdown，源码保留字面文本。调用端在 [src/editor/inline-completion.js](src/editor/inline-completion.js)。 |
+| 文档补全提示 | [server/models/completion.mjs](server/models/completion.mjs) 的 `completionMessages` 接收光标所在段落或代码行的位置、只读前文、后文及其中可修改的范围。通常模型返回 `{"insert":"续写内容"}`，编辑器按光标插入。图片前的可编辑后文止于图片。需要纠正后文时可返回 `{"list":[{"old_text":"原文","new_text":"修正内容"}]}`，各项须唯一匹配可编辑后文且互不重叠。文档支持 Markdown，源码保留字面文本。调用端在 [src/editor/inline-completion.js](src/editor/inline-completion.js)。 |
 | 在线正文修改 | Tab 采纳和 `edit_online_file` 共用 [shared/online-file-edit.mjs](shared/online-file-edit.mjs)。两个编辑器将候选绑定到文件 ID、正文快照和光标位置。预览由编辑器装饰层绘制。采纳时以一次可撤销的事务写入 Markdown 或源码，后续未标记的内容保留。 |
 | 工具循环及重试、压缩策略 | [server/agent/policy.mjs](server/agent/policy.mjs) 的 `loopPolicy`，以及 [server/agent/run.mjs](server/agent/run.mjs) 的 `runAgent` |
 | 模型协议、上下文窗口、输出 token 和供应商适配 | [server/agent/model.mjs](server/agent/model.mjs)；普通补全和模型发现在 [server/models/client.mjs](server/models/client.mjs) |
@@ -80,7 +80,7 @@ npm start
 | Agent 工具循环 | `maxTurns: null`，普通工具轮数不限。工具串行执行，开启 Pi 重试及自动上下文压缩，流超时为 120 秒 | `server/agent/policy.mjs` |
 | 错误纠正和截断续写 | `maxCorrections: 2`。纯文本达到输出上限时最多额外续写 3 次。连续 2 次续写都没有推进文件修改时停止自动续写，工具记录保存在会话中 | `server/agent/policy.mjs`、`server/agent/run.mjs` |
 | Agent 模型预算 | 会话上下文默认 200,000 token，最低 32,000。接近窗口上限时，Pi 会压缩可归纳的旧消息。`XUYE_MAX_OUTPUT_TOKENS` 是单次输出预算，默认 32,768，可设置为 1–127,999，实际请求还受剩余上下文约束 | `shared/chat-sessions.mjs`、`server/agent/model.mjs`、`server/agent/policy.mjs` |
-| 文档及源码补全 | 开启自动补全时，输入停顿 350 ms 后请求。两种开关状态下，280 ms 内双按 Tab 均可立即生成或换一版。每次触发直接请求补全模型一次，发送光标前最多 3,500、后最多 1,000 个 UTF-16 代码单元，输出预算为 1,024 token。返回空列表时显示暂无建议，Tab 可一次采纳整批修改 | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
+| 文档及源码补全 | 开启自动补全时，输入停顿 350 ms 后请求。两种开关状态下，280 ms 内双按 Tab 均可立即生成或换一版。每次触发直接请求补全模型一次，发送光标前最多 3,500、后最多 1,000 个 UTF-16 代码单元，输出预算为 1,024 token。建议为空时显示暂无建议，Tab 可一次采纳整批修改 | `src/editor/inline-completion.js`、`server/models/completion.mjs`、`server/agent/routes.mjs` |
 | 划词问答 | 请求在 `refs` 中携带 `{kind:"range",id,start,end,text,digest}`。`[start,end)` 对应原始 HTML 源码的 UTF-16 偏移，`digest` 是原文 SHA-256。源文件已改变时需重新选择 | `src/editor/selection-reference.js`、`server/agent/selection.mjs` |
 | 对话输入框 | 可拖动上边缘，也可聚焦边缘后按上下键，每次调整 16 px。默认高度 70 px，下限 62 px，上限取 540 px 和窗口高度 52% 中的较小值。偏好保存在浏览器的 `xuye.composerHeight` | `src/chat/composer.js` |
 
@@ -97,7 +97,7 @@ npm start
 
 同一文件有多处要改时，`edit_online_file` 可以一次提交以下参数。每个 `old_text` 都在调用开始时的同一份原文中定位。任一项找不到、匹配多次或与另一项重叠，整批都不会写入。
 
-匹配 0 处时，按原文核对空格、换行和标点。匹配多处时，工具返回命中总数和最多三个位置的上下文，可据此把相邻文字同时加入 `old_text` 和 `new_text`。文档与源码补全只在光标后的可编辑文本中匹配，同样会区分「匹配 0 处」和「匹配多处」。改动前后正文相同时，工具返回「无变化」。
+匹配 0 处时，按原文核对空格、换行和标点。匹配多处时，工具返回命中总数和最多三个位置的上下文，可据此把相邻文字同时加入 `old_text` 和 `new_text`。文档与源码补全在纠错时只匹配光标后的可编辑文本，同样会区分「匹配 0 处」和「匹配多处」。改动前后正文相同时，工具返回「无变化」。
 
 ```json
 {
@@ -109,7 +109,7 @@ npm start
 }
 ```
 
-单处替换使用 `{id, old_text, content}`，追加到文档末尾使用 `{id, append:true, content}`。整篇重写现有文档或 HTML 时，先用 `read_online_file` 读取目标。每页返回同一份完整正文的 SHA-256 值 `content_version`。调用 `edit_online_file({id, replace_all:true, base_version:content_version, content})` 时，工具先核对当前正文版本。版本不匹配会中止修改，重读目标后可基于新版本再提交。划词编辑由宿主绑定文件 ID 和选区，模型只传 `{content}`。文档和代码补全由编辑器绑定文件 ID、快照和光标，模型只返回 `{list}`。
+单处替换使用 `{id, old_text, content}`，追加到文档末尾使用 `{id, append:true, content}`。整篇重写现有文档或 HTML 时，先用 `read_online_file` 读取目标。每页返回同一份完整正文的 SHA-256 值 `content_version`。调用 `edit_online_file({id, replace_all:true, base_version:content_version, content})` 时，工具先核对当前正文版本。版本不匹配会中止修改，重读目标后可基于新版本再提交。划词编辑由宿主绑定文件 ID 和选区，模型只传 `{content}`。文档和代码补全由编辑器绑定文件 ID、快照和光标，模型返回 `{insert}` 续写或 `{list}` 纠错。
 
 Pi Durable 1.6.0 的原生文件工具也有同文件批量编辑接口 `edit({path, edits:[{oldText,newText}]})`，其原生 `read`、`write` 每次接收一个路径。
 

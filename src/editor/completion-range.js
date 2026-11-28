@@ -4,29 +4,29 @@ import { DOMSerializer, Slice } from "@tiptap/pm/model";
 // points back into the original document, including across paragraph breaks.
 export function completionSuffix($from) {
   const positions = [$from.pos];
-  let text = "", parent = $from.parent, offset = $from.parentOffset, start = $from.start();
+  let text = "", boundary, parent = $from.parent, offset = $from.parentOffset, start = $from.start();
   const siblings = $from.node(-1);
   let index = $from.index(-1);
   while (parent && parent.isTextblock) {
-    let blocked = false;
     parent.forEach((child, at) => {
-      if (blocked || at + child.nodeSize <= offset || text.length >= 1000) return;
+      if (boundary || at + child.nodeSize <= offset || text.length >= 1000) return;
       const value = child.isText ? child.text : child.type.name === "hardBreak" ? "\n" : null;
-      if (value === null) { blocked = true; return; }
+      if (value === null) { boundary = child.type.name; return; }
       const left = Math.max(0, offset - at);
       const piece = value.slice(left, left + 1000 - text.length);
       text += piece;
       for (let i = 1; i <= piece.length; i++) positions.push(start + at + left + i);
     });
     const next = siblings.maybeChild(++index);
-    if (blocked || text.length >= 1000 || !next?.isTextblock || !parent.sameMarkup(next)) break;
+    if (boundary || text.length >= 1000 || !next) break;
+    if (!next.isTextblock || !parent.sameMarkup(next)) { boundary = next.type.name; break; }
     start += parent.nodeSize;
     text += "\n";
     positions.push(start);
     parent = next;
     offset = 0;
   }
-  return { text, positions };
+  return { text, positions, boundary };
 }
 
 export function blockPathAt($from) {

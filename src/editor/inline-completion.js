@@ -8,6 +8,8 @@ import { toast } from "../shared";
 import { blockPathAt, completionSuffix } from "./completion-range";
 import { showCompletionIndicator } from "./completion-indicator";
 
+const contextLeaf = node => node.type.name === "image" ? "［图片］" : "\n";
+
 // Tab's browser default can't be replayed after waiting for the second key.
 function normalTab(view, event) {
   if (view.someProp("handleKeyDown", handler => handler(view, event))) return;
@@ -65,8 +67,10 @@ export function editorCompletion({ getFile, isActive, autoEnabled, markdown, sta
     const starts = offset === 0 || (code && block.textBetween(offset - 1, offset) === "\n");
     const ends = offset === block.content.size || (code && block.textBetween(offset, offset + 1) === "\n");
     const context = {
-      before: base.textBetween(Math.max(0, from - 3501), from, "\n", "\n").slice(-3500),
-      after: base.textBetween(from, Math.min(base.content.size, from + 1001), "\n", "\n").slice(0, 1000),
+      before: base.textBetween(Math.max(0, from - 3501), from, "\n", contextLeaf).slice(-3500),
+      after: suffix.boundary === "image" ? suffix.text :
+        base.textBetween(from, Math.min(base.content.size, from + 1001), "\n", contextLeaf).slice(0, 1000),
+      boundary: suffix.boundary,
       editableAfter: suffix.text, blockPath: blockPathAt($from),
       cursorAt: starts ? (ends ? "empty" : "start") : ends ? "end" : "middle",
       atFileEnd: Selection.atEnd(base).from === from,
