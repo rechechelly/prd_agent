@@ -33,9 +33,27 @@ function resolveBodyEdits(fileId, body, edits, atCaret = false) {
   return matches;
 }
 
+// A model may quote both sides of the caret. Keep only the writable part
+// when the quoted text has exactly one alignment and preserves the entire left side.
+function withoutCaretPrefix(edit, before, suffix, insertion) {
+  const { oldText, content } = edit;
+  if (!oldText || !before || suffix.includes(oldText)) return edit;
+  const left = before.slice(-oldText.length);
+  const window = left + suffix.slice(0, oldText.length - 1);
+  const start = window.indexOf(oldText);
+  if (start < 0 || window.indexOf(oldText, start + 1) >= 0) return edit;
+  const prefix = left.slice(start);
+  if (!content.startsWith(prefix)) return edit;
+  const remaining = oldText.slice(prefix.length);
+  const replacement = content.slice(prefix.length);
+  return remaining ? { oldText: remaining, content: replacement } : { range: insertion, content: replacement };
+}
+
 // The suffix starts at the caret. Only completion may insert at its empty anchor.
-export function cursorEdits(suffix, list) {
-  return resolveBodyEdits(undefined, suffix, textEditOperations(list, { from: 0, to: 0 }), true)
+export function cursorEdits(suffix, list, before = "") {
+  const insertion = { from: 0, to: 0 };
+  const edits = textEditOperations(list, insertion).map(edit => withoutCaretPrefix(edit, before, suffix, insertion));
+  return resolveBodyEdits(undefined, suffix, edits, true)
     .filter(edit => suffix.slice(edit.from, edit.to) !== edit.content);
 }
 

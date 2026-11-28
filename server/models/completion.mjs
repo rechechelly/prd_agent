@@ -15,7 +15,7 @@ export function completionMessages(title, input) {
         'new_text 将完整替代 old_text。保留原文中正确的文字，插入时不要把整句当作锚点。例如光标后的“户点击保存”缺少首字，返回 {"list":[{"old_text":"","new_text":"用"}]}。',
         "补齐未完成的词句或代码，留意已有后文，避免重复。文末或空行可根据前文和标题接着写下一句、下一段或下一个条目。无需续写或纠错时返回 {\"list\":[]}。",
         code
-          ? "cursorAt 表示当前代码行内的位置。new_text 是可直接插入的原始代码，保留语言、缩进、空白和换行。"
+          ? 'cursorAt 表示当前代码行内的位置。续写未完成的标签、标识符或字符串时，old_text 为空，new_text 只写光标后缺少的代码，保留缩进和换行。例如 before 以 <title 结尾、下一行已有 <style>，可返回 {"list":[{"old_text":"","new_text":">页面标题</title>"}]}。'
           : "cursorAt 表示当前段落内的位置。new_text 使用 Markdown。句中续写直接接字，需要另起段落或列表时保留开头的换行。",
         input.format === "list" ? "可一次修正多处有根据的错误，保持建议简短。" : "最多返回一项。",
         input.trigger === "manual" ? "用户主动请求建议，请给出有上下文依据的下一步。遇到完整句号可以另起一句，避免虚构需求和事实。" : "",
@@ -44,7 +44,7 @@ export async function suggestCompletion(config, title, input, signal) {
     const response = JSON.parse(output);
     if (Object.keys(response ?? {}).some(key => key !== "list"))
       throw Error("文件已由编辑器绑定，请仅返回 list");
-    edits = cursorEdits(suffix, response?.list);
+    edits = cursorEdits(suffix, response?.list, String(input.before || "").slice(-3500));
   } catch (error) {
     if (!(error instanceof RangeError))
       fault(error instanceof SyntaxError ? "补全模型未返回有效 JSON" : "补全建议无效：" + error.message, 502);
