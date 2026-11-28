@@ -226,6 +226,7 @@ function updateHtmlView(sourceDiff, renderSource = doc.html) {
   } else frame.hidden = rawMode;
   $("htmlSourceEditor").hidden = !rawMode || sourceDiff;
   $("htmlDiff").hidden = !rawMode || !sourceDiff;
+  $("editorFooter").hidden = !rawMode;
 
   if (rawMode && !sourceDiff) sourceEditor.set(doc.html);
   mountCompletionControls($("resultRail"), rawMode && !sourceDiff);
@@ -530,6 +531,10 @@ function show(p) {
   switchComposer(selectedSession(doc));
   for (const id of ["work", "boardPage", "result", "emptyPage"])
     $(id).hidden = p !== id;
+  const footer = $("editorFooter");
+  (p === "boardPage" || p === "result" ? $(p) : $("document")).append(footer);
+  $("wordCount").hidden = p !== "work";
+  footer.hidden = p === "result";
   closeDirectoryDrawer();
   tree();
   header();

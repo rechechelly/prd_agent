@@ -110,7 +110,7 @@ export async function boot(read, setModels, setOwner) {
   return data.data;
 }
 export function changed() {
-  if (!online || !readState) return;
+  if (!online || !readState || conflict) return;
   dirty = true;
   $("saved").textContent = "待保存";
   clearTimeout(timer);
