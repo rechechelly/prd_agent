@@ -23,6 +23,8 @@ npm start
 
 `npm run build` 生成离线单文件 `叙页产品需求工作台.html` 和在线资源目录 `.web/`。在线页面按内容哈希缓存脚本和样式，支持 gzip。每次修改前端后重新运行 `npm run build`，修改服务端后重启 Node。完整的模型、存储与分享能力通过登录版使用。Linux 的 Bash 和原型截图分别需要 bubblewrap 和 Chromium，安装与托管方式见[部署说明](部署说明.md)。
 
+安装根目录和 `server/` 的依赖后，运行 `npm run test:completion` 可在 Chromium 中复测文档与 HTML 源码补全。测试使用独立工作区和本地模拟模型，检查实际键盘操作及保存结果，结束后自动清理。可以通过 `XUYE_CHROME` 指定 Chrome 或 Chromium 的可执行文件。
+
 ## 连接模型
 
 1. 打开**工作区设置 → 供应商管理**，列表会显示已保存的供应商、接口地址和模型数量。点击一条记录可重新编辑；点击「新增供应商」打开空白表单，填写名称、Base URL 和 API Key。Base URL 应包含供应商要求的版本前缀，例如 `https://api.example.com/v1`。远程地址使用 HTTPS，本机兼容服务也支持 loopback HTTP。
