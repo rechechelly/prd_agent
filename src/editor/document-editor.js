@@ -10,12 +10,14 @@ import { DocumentImage, insertDocumentImage } from "./document-image";
 import { installBlockTools } from "./block-tools";
 import { installDocumentOutline } from "./document-outline";
 
-const TextColor = Mark.create({
-  name: "textColor",
-  addAttributes: () => ({ color: {} }),
-  parseHTML: () => [{ style: "color", getAttrs: color => ({ color }) }],
-  renderHTML: ({ mark }) => ["span", { style: "color: " + mark.attrs.color }, 0],
-});
+function colorMark(name, property) {
+  return Mark.create({
+    name,
+    addAttributes: () => ({ color: {} }),
+    parseHTML: () => [{ style: property, getAttrs: color => ({ color }) }],
+    renderHTML: ({ mark }) => ["span", { style: property + ": " + mark.attrs.color }, 0],
+  });
+}
 
 export function createDocumentEditor({ completion, getFile, quoteSelection, onChange }) {
   function addImage(file) {
@@ -26,7 +28,8 @@ export function createDocumentEditor({ completion, getFile, quoteSelection, onCh
     element: $("editor"),
     extensions: [
       StarterKit.configure({ link: { openOnClick: false } }),
-      TextColor,
+      colorMark("textColor", "color"),
+      colorMark("backgroundColor", "background-color"),
       TaskList,
       TaskItem.configure({ nested: true }),
       TableKit.configure({ table: { resizable: true } }),

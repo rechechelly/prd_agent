@@ -25,7 +25,6 @@ export function installBlockSelection(editor) {
       });
       if (unmarked) tr.addMark(from, to, mark.create());
       else tr.removeMark(from, to, mark);
-      tr.setMeta(key, range);
     }
     editor.view.dispatch(tr);
     editor.view.focus();
@@ -43,7 +42,8 @@ export function installBlockSelection(editor) {
         init: () => null,
         apply(tr, prev) {
           if (tr.getMeta(key) !== undefined) return tr.getMeta(key);
-          return tr.docChanged ? null : prev;
+          // Formatting (including undo/redo) keeps all block positions intact.
+          return prev && tr.mapping.maps.some(map => map.ranges.length) ? null : prev;
         },
       },
       props: {

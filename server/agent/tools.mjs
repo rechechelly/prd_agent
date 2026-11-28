@@ -1,7 +1,7 @@
 import { defineTextTool } from "./text-tool.mjs";
 import { onlineBatchTool } from "../workspace/batch-tool.mjs";
 import { onlineFileTools } from "../workspace/file-tools.mjs";
-import { checkOnlineFileSize } from "../workspace/online-files.mjs";
+import { contentVersion } from "../workspace/online-files.mjs";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { obj, str } from "@earendil-works/pi-schema";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
@@ -38,7 +38,6 @@ export function createAgentTools({
   network,
   compactTool,
   env,
-  writeCurrent,
 }) {
   const availableTools = [
     ...onlineFileTools(workspace),
@@ -58,7 +57,7 @@ export function createAgentTools({
           prd: document.html,
           html: restoreImages(page.html),
         });
-        return draft.edit({ id: document.id, content: result.prd });
+        return draft.edit({ id: document.id, replace_all: true, base_version: contentVersion(document.html), content: result.prd });
       },
     }),
     defineTextTool({
@@ -83,11 +82,9 @@ export function createAgentTools({
     name: "edit_online_file",
     description: "仅替换本次划词选区。content 是完整的新选区片段，无需提供全文或目标 ID。保留文档片段中的原有标签。HTML 源码选区按原样替换。",
     parameters: obj({ content: str() }),
-    async execute({ content }) {
-      const value = scope.replace(files["current.html"], content);
-      checkOnlineFileSize(value);
-      await writeCurrent(value);
-      return "已在当前文件的指定选区提交修改，等待用户采用。";
+    execute({ content }) {
+      const before = files["current.html"];
+      return workspace.edit({ content: scope.replace(before, content), replace_all: true, base_version: contentVersion(before) });
     },
   }));
   return scopedTools;

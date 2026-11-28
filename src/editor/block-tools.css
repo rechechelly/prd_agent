@@ -195,15 +195,32 @@
 }
 .axisDelete { padding: 6px; color: #bc3846; }
 .axisDelete:hover { background: #fff0f1; }
-.textSelectionBar:not([hidden]) { display: flex; padding: 3px; gap: 2px; }
+.textSelectionBar:not([hidden]) { display: flex; flex-wrap: wrap; padding: 3px; gap: 2px; }
 .textSelectionBar button { min-width: 28px; padding: 4px; }
-.fontColorControl {
-  position: relative; display: grid; place-items: center; min-width: 28px; font-weight: 650;
-  text-decoration: underline 3px var(--font-color, currentColor); text-underline-offset: 3px;
+.textSelectionBar > button:hover, .textSelectionBar > button[aria-pressed=true] { color: #504197; background: #eeeafa; }
+.colorPickerTrigger { display: inline-flex; align-items: center; gap: 4px; }
+.colorPickerTrigger::after {
+  content: ""; width: 5px; height: 5px; border: solid #81858e; border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-1px) rotate(45deg);
 }
-.fontColorControl select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.fontColorControl:is(:hover, :focus-within) { background: #eeeafa; border-radius: 4px; }
-.textSelectionBar button:hover, .textSelectionBar button[aria-pressed=true] { color: #504197; background: #eeeafa; }
+.colorPickerTrigger:has(+ :popover-open)::after { transform: translateY(1px) rotate(225deg); }
+.colorPalette {
+  position: fixed; inset: auto; margin: 0; width: min(244px, calc(100vw - 12px)); max-height: calc(100dvh - 12px);
+  padding: 10px 12px; overflow: auto; border: 1px solid #dce0e6; border-radius: 6px;
+  background: white; color: #30333c; box-shadow: 0 4px 16px #29324a24;
+}
+.colorPalette b { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 500; }
+.swatchGrid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px 4px; margin-bottom: 12px; }
+.swatchGrid button { min-width: 0; height: 24px; padding: 0; border-radius: 3px; }
+.swatchGrid .fontSwatch { color: var(--swatch); background: white; border: 1px solid #e1e4e8; }
+.swatchGrid .backgroundSwatch { background: var(--swatch); }
+.swatchGrid .clearSwatch {
+  border: 1px solid #dce0e6;
+  background: linear-gradient(135deg, white 48%, #b2b8c1 49%, #b2b8c1 51%, white 52%);
+}
+.swatchGrid button:is(:hover, :focus-visible) { outline: 1px solid #8695aa; outline-offset: 1px; }
+.swatchGrid button[aria-pressed=true] { outline: 2px solid #366df5; outline-offset: 0; }
+.colorPalette .resetColors { width: 100%; padding: 4px 8px; border: 1px solid #dce0e6; border-radius: 4px; font-size: 12px; }
 .textSelectionBar [data-mark=bold] { font-weight: 750; }
 .textSelectionBar [data-mark=italic] { font-style: italic; }
 .textSelectionBar [data-mark=underline] { text-decoration: underline; }

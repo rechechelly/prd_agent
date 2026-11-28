@@ -183,6 +183,11 @@ export async function runAgent(
           (name) => references.assets.get(name) || name,
         );
     }
+    function sameHtml(left, right) {
+      return left === right || (typeof right === "string" && (images.length > 0 || references.assets.size > 0) &&
+        restoreImages(left) === restoreImages(right));
+    }
+    if (saved && sameHtml(files["current.html"], html)) files["current.html"] = html;
     const { env, inputs, mountSkills, writeSnapshot } = await taskEnvironment(
       stage,
       files,
@@ -214,6 +219,7 @@ export async function runAgent(
       docs,
       ownerId,
       {
+        baseHtml: html,
         read: () => ({
           html: files["current.html"],
           ...(canvas && { scene: doc.scene, drawing: drawing.patch }),
@@ -223,7 +229,7 @@ export async function runAgent(
         },
         write: writeCurrent,
       },
-      saved,
+      { entries: saved?.entries, changes: saved?.changes, sameHtml },
     );
     const hasFiles = () =>
       workspace.entries.length > 0 || workspace.changes.length > 0;
@@ -263,7 +269,6 @@ export async function runAgent(
       network,
       compactTool,
       env,
-      writeCurrent,
     });
     const registry = createRegistry();
     const rounds = new Set();

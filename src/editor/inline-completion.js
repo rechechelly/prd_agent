@@ -77,13 +77,13 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     const hideIndicator = showCompletionIndicator(view, from, token.signal);
     try {
       status("正在补全…");
-      const list = online ? (await api("agent", { mode: "complete", format: "list", doc: file.id, title: file.title,
-        trigger: manual ? "manual" : "auto", ...context }, token.signal)).list
-        : offlineEdit(context, file.title);
+      const { list, reason } = online ? await api("agent", { mode: "complete", format: "list", doc: file.id, title: file.title,
+        trigger: manual ? "manual" : "auto", ...context }, token.signal)
+        : { list: offlineEdit(context, file.title) };
       if (!current()) return;
       const matches = cursorEdits(suffix.text, list);
       if (!matches.length) {
-        status("暂无补全建议");
+        status(reason ? "补全定位失败" : "暂无补全建议", reason);
         return;
       }
       const decorations = [];

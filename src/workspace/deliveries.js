@@ -4,6 +4,8 @@ import { emptyHtml } from "./html-source";
 import { proposedScene } from "./board";
 import { lastVersion } from "../../shared/migrate-directory.mjs";
 
+const editsBody = c => c.html !== undefined && c.html !== c.base.html;
+
 function applyWorkspaceFiles(docs, folders, output, documentBody) {
   const all = new Map([...docs, ...folders].map((f) => [f.id, f]));
   const added = output.files
@@ -26,7 +28,7 @@ function applyWorkspaceFiles(docs, folders, output, documentBody) {
       !f ||
       f.title !== c.base.title ||
       (f.parent || "") !== c.base.parent ||
-      (c.base.html !== undefined && (f.html || "") !== c.base.html) ||
+      (editsBody(c) && c.base.html !== undefined && (f.html || "") !== c.base.html) ||
       (c.base.scene !== undefined && sceneVersion(f.scene) !== c.base.scene)
     )
       throw Error("目标文件在任务期间已变更，请刷新并核对：" + c.base.title);
@@ -38,8 +40,10 @@ function applyWorkspaceFiles(docs, folders, output, documentBody) {
   }
   for (const id of [...added.map((f) => f.id), ...changes.map((c) => c.id)]) {
     const f = projected.get(id);
+    const before = all.get(id);
+    const pathChanged = !before || before.title !== f.title || (before.parent || "") !== (f.parent || "");
     if (
-      [...projected.values()].some(
+      pathChanged && [...projected.values()].some(
         (p) =>
           p.id !== id &&
           (p.parent || "") === (f.parent || "") &&
@@ -64,9 +68,11 @@ function applyWorkspaceFiles(docs, folders, output, documentBody) {
     const f = all.get(c.id);
     if (c.title !== undefined) f.title = c.title;
     if (c.parent !== undefined) f.parent = c.parent;
-    if (c.html !== undefined || c.drawing) {
+    // Older deliveries may contain an unchanged body alongside metadata.
+    const bodyChanged = editsBody(c) && c.html !== (f.html || "");
+    if (bodyChanged || c.drawing) {
       (f.externalReviews ||= []).push({
-        ...(c.html !== undefined && { proposed: c.html, base: f.html }),
+        ...(bodyChanged && { proposed: c.html, base: f.html }),
         ...(c.drawing && { canvasPatch: c.drawing, canvasBase: c.base.scene }),
       });
     }
