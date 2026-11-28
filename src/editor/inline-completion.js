@@ -58,6 +58,7 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     previous = last;
     const token = controller = new AbortController();
     const file = getFile(), { doc: base, selection: { $from, from } } = view.state;
+    const fileId = file.id, fileBody = file.html;
     const suffix = completionSuffix($from);
     const code = !!$from.parent.type.spec.code;
     const offset = $from.parentOffset, block = $from.parent;
@@ -72,15 +73,18 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
       codeLanguage: code ? (markdown ? $from.parent.attrs.language || "" : "html") : undefined,
       modelId: selectedModel("completion"), previous: last,
     };
-    const current = () => !token.signal.aborted && eligible() && file === getFile() &&
+    const current = () => !token.signal.aborted && eligible() && file === getFile() && file.id === fileId && file.html === fileBody &&
       view.state.doc === base && view.state.selection.from === from;
     const hideIndicator = showCompletionIndicator(view, from, token.signal);
     try {
       status("正在补全…");
-      const { list, reason } = online ? await api("agent", { mode: "complete", format: "list", doc: file.id, title: file.title,
+      const { list, reason } = online ? await api("agent", { mode: "complete", format: "list", doc: fileId, title: file.title,
         trigger: manual ? "manual" : "auto", ...context }, token.signal)
         : { list: offlineEdit(context, file.title) };
-      if (!current()) return;
+      if (!current()) {
+        if (controller === token) clear();
+        return;
+      }
       const matches = cursorEdits(suffix.text, list);
       if (!matches.length) {
         status(reason ? "补全定位失败" : "暂无补全建议", reason);
@@ -110,7 +114,7 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
           else content = markdown(content, base.resolve(start), added);
           decorations.push(Decoration.widget(end, added, { side: 1, ignoreSelection: true }));
         }
-        return { range: { fileId: file.id, base, from: start, to: end }, content };
+        return { range: { fileId, base, from: start, to: end }, content };
       });
       candidate = { list, edits, current };
       view.dispatch(view.state.tr.setMeta(key, DecorationSet.create(base, decorations)));
@@ -128,7 +132,8 @@ export function editorCompletion({ getFile, enabled, markdown, status }) {
     if (eligible()) debounce = setTimeout(() => generate(false), 350);
   }
   function accept(result) {
-    if (result !== candidate || !result.current()) return;
+    if (result !== candidate) return;
+    if (!result.current()) return clear();
     const tr = closeHistory(view.state.tr);
     editOnlineFileBody(getFile().id, tr.doc, result.edits, (from, to, content) => {
       if (typeof content === "string") tr.insertText(content, from, to);

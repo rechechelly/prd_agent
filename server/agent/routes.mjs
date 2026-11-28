@@ -3,7 +3,7 @@ import { suggestCompletion } from "../models/completion.mjs";
 import { modelConfig } from "../models/providers.mjs";
 import { fault } from "../storage.mjs";
 import { recordWorkspaceFiles } from "../workspace/generation-log.mjs";
-import { relatedFiles } from "../../shared/chat-sessions.mjs";
+import { relatedFiles, targetsFile } from "../../shared/chat-sessions.mjs";
 import { agentHistory, transcriptPath } from "./history.mjs";
 import { messageQueue } from "./queue.mjs";
 import { pauseAgent, recoverableRequest, runAgent } from "./run.mjs";
@@ -76,6 +76,7 @@ export async function agentRoute(url, req, res, files, chats, input) {
   // Old bookmarks may still carry task-scoped API credentials. New callers use their message.
   delete input.externalApi;
   if (path === "/api/agent" && input.mode === "complete") {
+    if (input.format === "list" && (typeof input.doc !== "string" || !input.doc.trim())) fault("补全请求缺少当前文件 ID");
     const controller = new AbortController();
     res.once("close", () => controller.abort());
     // A new file can request suggestions before its first workspace save.
@@ -90,18 +91,21 @@ export async function agentRoute(url, req, res, files, chats, input) {
   if (path === "/api/agent/pause") return pauseAgent(storeId, storeChat, input.attemptId);
   if (path === "/api/agent/queue" || input.queued) {
     const store = transcriptPath(storeId, storeChat);
-    if (path === "/api/agent/queue") return { items: await queueCommand(store, input) };
+    if (path === "/api/agent/queue") return { items: await queueCommand(store, { ...input, doc: file.id }) };
     const [head] = await messageQueue(store);
     if (head?.requestId === input.requestId) {
-      if (head.doc && head.doc !== file.id) fault("排队消息与目标文件不符", 409);
+      if ((head.doc || session.sourceId) !== file.id) fault("排队消息与目标文件不符", 409);
       Object.assign(input, { question: head.question, refs: head.refs, modelId: head.modelId });
     }
     else if ((await recoverableRequest(store))?.requestId !== input.requestId)
       fault("消息队列已更新", 409);
   }
-  if (input.editIndex !== undefined && (!Number.isSafeInteger(input.editIndex) ||
-      input.editIndex < 0 || input.editIndex >= session.messages.length))
-    fault("要编辑的消息不存在", 409);
+  if (input.editIndex !== undefined) {
+    if (!Number.isSafeInteger(input.editIndex) || input.editIndex < 0 || input.editIndex >= session.messages.length)
+      fault("要编辑的消息不存在", 409);
+    if (!targetsFile(session.messages[input.editIndex], session, file))
+      fault("重新发送历史提问时需要使用原文件", 409);
+  }
 
   const live = req.headers.accept === "application/x-ndjson" ? agentStream(res) : null;
   try {

@@ -27,7 +27,7 @@ export function prepareReferences(docs, refs, files, scope) {
       if (ref.historyOnly || !scope) continue;
       file = "selection-target.html";
       files[file] = scope.fragment;
-      list.push({ title: ref.title, fileId: ref.id, start: ref.start, end: ref.end, unit: "UTF-16，原始源码，左闭右开",
+      list.push({ title: ref.title, id: ref.id, start: ref.start, end: ref.end, unit: "UTF-16，原始源码，左闭右开",
         file, text: ref.text.slice(0, 2000), fragment: scope.fragment.slice(0, 4000) });
       continue;
     }

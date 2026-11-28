@@ -25,7 +25,7 @@ export function selectionScope(refs, ownerId, doc) {
     return html.slice(prefix.html.length, html.length - suffix.length);
   }
   return {
-    fragment, read,
+    fileId: id, fragment, read,
     replace(html, replacement) {
       const before = read(html);
       if (doc.type !== "交互 HTML") {

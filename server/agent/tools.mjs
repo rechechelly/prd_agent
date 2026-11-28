@@ -1,5 +1,5 @@
 import { defineTextTool } from "./text-tool.mjs";
-import { onlineBatchTool } from "../workspace/batch-tool.mjs";
+import { defineOnlineTool, onlineBatchTool } from "../workspace/batch-tool.mjs";
 import { onlineFileTools } from "../workspace/file-tools.mjs";
 import { contentVersion } from "../workspace/online-files.mjs";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -33,7 +33,6 @@ export function createAgentTools({
   scope,
   skillSet,
   mountSkills,
-  files,
   inputs,
   network,
   compactTool,
@@ -45,6 +44,7 @@ export function createAgentTools({
     onlineBatchTool(workspace, {
       name: "embed_view_screenshots",
       description: toolDescriptions.embed_view_screenshots,
+      addressHint: "传入 document_id 和 html_id，分别指定目标文档和 HTML 原型的文件 ID。",
       parameters: obj({ document_id: str(), html_id: str() }),
       async execute(draft, { document_id, html_id }) {
         const document = draft.target(document_id),
@@ -78,13 +78,14 @@ export function createAgentTools({
   const scopedTools = availableTools.filter(tool =>
     ["read", "read_online_file", "list_online_files", "skill_load", "compact_context"].includes(tool.name)
   );
-  scopedTools.push(defineTextTool({
+  scopedTools.push(defineOnlineTool({
     name: "edit_online_file",
     description: "仅替换本次划词选区。content 是完整的新选区片段，无需提供全文或目标 ID。保留文档片段中的原有标签。HTML 源码选区按原样替换。",
     parameters: obj({ content: str() }),
+    addressHint: "划词模式只传 content，目标由本次选择的文字绑定。",
     execute({ content }) {
-      const before = files["current.html"];
-      return workspace.edit({ content: scope.replace(before, content), replace_all: true, base_version: contentVersion(before) });
+      const { id, html } = workspace.target(scope.fileId);
+      return workspace.edit({ id, content: scope.replace(html, content), replace_all: true, base_version: contentVersion(html) });
     },
   }));
   return scopedTools;

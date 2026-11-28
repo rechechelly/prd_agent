@@ -17,18 +17,25 @@ export function contentVersion(body) {
 }
 
 function fileName(value) {
-  const name = value.trim();
+  const name = typeof value === "string" ? value.trim() : "";
   if (!name || name === "." || name === ".." || /[\/\\\x00-\x1f]/.test(name))
     throw Error("请输入有效的在线文件名，不能使用路径分隔符、空段或上级目录");
   return name;
 }
 
-function relativeNames(path) {
-  if (typeof path !== "string" || /^(?:\/|[a-z][a-z0-9+.-]*:\/\/)/i.test(path) || path.includes("\\"))
-    throw Error("请使用在线工作区内的相对路径");
-  const names = path.replace(/^\.\//, "").split("/").map(fileName);
-  if (/^[a-z]:/i.test(names[0])) throw Error("请使用在线工作区内的相对路径");
-  return names;
+function parentKey(id, nodes) {
+  if (id === null) return "";
+  if (typeof id !== "string" || !id.trim())
+    throw Error("请传父节点的 parent_id；根目录使用 null");
+  if (!nodes.some(node => node.id === id))
+    throw Error("父节点不存在，请用 list_online_files({parent_id:null}) 核对 ID");
+  return id;
+}
+
+function checkFields(extra) {
+  const fields = Object.keys(extra);
+  if (fields.length)
+    throw Error("不支持字段 " + fields.join("、") + "。已有文件用 id，列目录和新建文件用 parent_id。");
 }
 
 function keepNetChange(change, sameHtml) {
@@ -41,7 +48,7 @@ function keepNetChange(change, sameHtml) {
   return Object.keys(change).length > 2; // id and base alone are not a change
 }
 
-// Paths resolve against workspace nodes only. An unsuccessful call adds no ancestors.
+// File IDs are the only selectors. Paths in tool results are display labels.
 export function onlineWorkspace(nodes, currentId, current, { entries = [], changes = [], sameHtml = Object.is } = {}) {
   const currentBaseHtml = current?.baseHtml ?? current?.read().html;
   changes = changes.filter(change => keepNetChange(change, sameHtml));
@@ -72,26 +79,11 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
       ...changes.find((c) => c.id === n.id),
     }));
   }
-  function target(id, path) {
-    const all = effective();
-    if (id !== undefined && path !== undefined)
-      throw Error("请选择 id 或 path");
-    if (path !== undefined) {
-      let parent = "";
-      for (const title of relativeNames(path)) {
-        const matches = all.filter(
-          (n) => (n.parent || "") === parent && n.title === title,
-        );
-        if (!matches.length)
-          throw Error("路径中找不到「" + title + "」，请用 list_online_files 核对位置");
-        if (matches.length > 1)
-          throw Error("路径中有重名文件「" + title + "」，请用 list_online_files 返回的 ID");
-        parent = matches[0].id;
-      }
-      id = parent;
-    }
-    const node = all.find((n) => n.id === (id ?? currentId));
-    if (!node) throw Error("文件不存在");
+  function target(id) {
+    if (typeof id !== "string" || !id.trim())
+      throw Error("请传在线文件的 id；可用 list_online_files({parent_id:null}) 查询");
+    const node = effective().find(n => n.id === id);
+    if (!node) throw Error("文件 ID 不存在，请用 list_online_files({parent_id:null}) 核对 ID");
     return node;
   }
   function recordUpdate(node, update) {
@@ -128,15 +120,16 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
     else recordUpdate(node, { drawing: patch });
   }
 
-  function read({ id, path, version, file, offset = 0, limit = 16000 }, maxChars = 40000) {
+  function read({ id, version, file, offset = 0, limit = 16000, ...extra }, maxChars = 40000) {
+    checkFields(extra);
     let n;
     if (version !== undefined || file !== undefined) {
-      if (!id || path !== undefined || !Number.isSafeInteger(version) || !file)
+      if (typeof id !== "string" || !id.trim() || !Number.isSafeInteger(version) || !file)
         throw Error("历史交付引用需要 id、version 和 file");
       const revision = resolveFile(nodes, { id, version, file });
       if (!revision) throw Error("找不到此版本的交付文件");
       n = { ...revision, id, html: revision.content };
-    } else n = target(id, path);
+    } else n = target(id);
     if (maxChars < 1) throw Error("读取项目太多，请分批读取");
     if (offset < 0 || limit < 1)
       throw Error("offset 需非负，limit 需为正数");
@@ -152,7 +145,7 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
       id: n.id,
       title: n.title,
       type: n.type,
-      parent: n.parent || "",
+      ...(version === undefined && { parent_id: n.parent || null }),
       content_version,
       length: body.length,
       content: body.slice(offset, end),
@@ -160,14 +153,12 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
     };
   }
 
-  function list({ id, path, offset = 0, limit = 100 }) {
+  function list({ parent_id, offset = 0, limit = 100, ...extra }) {
+    checkFields(extra);
     if (offset < 0 || limit < 1) throw Error("分页参数无效");
-    const root =
-      id === undefined && (path === undefined || path === "." || path === "./")
-        ? ""
-        : target(id, path).id;
     const children = new Map();
     const nodes = effective();
+    const root = parentKey(parent_id, nodes);
     for (const node of nodes) {
       const key = node.parent || "";
       if (!children.has(key)) children.set(key, []);
@@ -186,11 +177,11 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
       seen.add(node.id);
       rows.push({
         id: node.id,
-        parent: node.parent || "",
+        parent_id: node.parent || null,
         title: node.title,
         type: node.type,
         depth,
-        path,
+        display_path: path,
       });
       for (const child of [...(children.get(node.id) || [])].reverse())
         stack.push({ node: child, depth: depth + 1, path: path + "/" + child.title });
@@ -198,22 +189,19 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
     const end = offset + Math.min(limit, 300);
     return {
       current_id: currentId,
-      root,
+      parent_id,
       total: rows.length,
       next_offset: end < rows.length ? end : null,
       files: rows.slice(offset, end),
     };
   }
 
-  function create({ path, type, parent_id, content, source }) {
+  function create({ title, type, parent_id, content, ...extra }) {
+    checkFields(extra);
     if (!Object.hasOwn(onlineFileTypes, type)) throw Error("不支持的文件类型");
-    const names = relativeNames(path);
-    if (source !== undefined) throw Error("请用 content 提交正文。任务文件可先用 read 读取");
-    const working = effective(),
-      pending = [];
-    let parent = parent_id ?? "";
-    if (parent && !working.some((n) => n.id === parent))
-      throw Error("父文件不存在，请使用 list_online_files 核对 ID");
+    title = fileName(title);
+    const working = effective();
+    const parent = parentKey(parent_id, working);
     if (type === "folder" && content !== undefined) throw Error("文件夹不能设置正文");
     const material = { html: content };
     if (content !== undefined) checkOnlineFileSize(content);
@@ -227,53 +215,33 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
         material.drawing = validateDrawing(parsed, []);
       delete material.html;
     }
-    for (const [i, title] of names.entries()) {
-      const leaf = i === names.length - 1;
-      const matches = working.filter(
-        (n) => (n.parent || "") === parent && n.title === title,
-      );
-      if (matches.length > 1)
-        throw Error("路径中有重名文件「" + title + "」，请指定父文件 ID");
-      let item = matches[0];
-      if (leaf && item) {
-        if (
-          !entries.some((f) => f.id === item.id) ||
-          item.type !== onlineFileTypes[type] ||
-          ["html", "drawing"].some(
-            (k) => JSON.stringify(item[k]) !== JSON.stringify(material[k]),
-          )
-        )
-          throw Error(
-            "同名文件已存在：「" + title + "」（ID " + item.id + "）。如需修改该文件，请按 ID 调用 edit_online_file；另建文件请更换名称或目录。",
-          );
-      } else if (!item) {
-        item = {
-          id: randomUUID(),
-          parent,
-          title,
-          type: leaf ? onlineFileTypes[type] : "文件夹",
-          ...(leaf && material),
-        };
-        pending.push(item);
-        working.push(item);
-      }
-      parent = item.id;
+    const siblings = working.filter(n => (n.parent || "") === parent && n.title === title);
+    if (siblings.length > 1)
+      throw Error(`该父节点下有 ${siblings.length} 个同名文件「${title}」。请用 list_online_files 传入相同的 parent_id 核对各文件 ID，或更换 title 新建。`);
+    let item = siblings[0];
+    if (item) {
+      const retry = entries.some(f => f.id === item.id) &&
+        item.type === onlineFileTypes[type] && item.html === material.html &&
+        JSON.stringify(item.drawing) === JSON.stringify(material.drawing);
+      if (!retry)
+        throw Error("同名文件已存在：「" + title + "」（ID " + item.id +
+          "）。请用 list_online_files 核对 ID 后编辑已有文件，或更换 title 新建。");
+    } else {
+      item = { id: randomUUID(), title, parent, type: onlineFileTypes[type], ...material };
+      entries.push(item);
     }
-    entries.push(...pending);
-    const byId = new Map(working.map(node => [node.id, node]));
     return {
-      id: parent,
-      path: workspacePath(byId, byId.get(parent)),
-      type,
+      id: item.id, parent_id, title, type,
+      display_path: workspacePath(new Map(working.map(node => [node.id, node])), item),
       status: "已登记，任务完成后归档",
     };
   }
 
-  async function edit({ id, path, title, parent_id, content, source, append, old_text, drawing, list, replace_all, base_version }) {
-    const n = target(id, path),
+  async function edit({ id, title, parent_id, content, append, old_text, drawing, list, replace_all, base_version, ...extra }) {
+    checkFields(extra);
+    const n = target(id),
       all = effective();
     const update = {};
-    if (source !== undefined) throw Error("请用 content 提交正文。任务文件可先用 read 读取");
     if (list !== undefined && (!Array.isArray(list) || !list.length ||
       content !== undefined || old_text !== undefined || append !== undefined))
       throw Error("list 需要至少一项替换，且不能与 content、old_text 或 append 混用");
@@ -291,8 +259,10 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
       const name = fileName(title);
       if (name !== n.title) update.title = name;
     }
-    if (parent_id !== undefined && parent_id !== (n.parent || "")) {
-      let parent = parent_id;
+    const oldParent = n.parent || "";
+    const destination = parent_id === undefined ? oldParent : parentKey(parent_id, all);
+    if (destination !== oldParent) {
+      let parent = destination;
       const seen = new Set([n.id]);
       while (parent) {
         if (seen.has(parent)) throw Error("文件不能移到自身或后代之下");
@@ -301,11 +271,9 @@ export function onlineWorkspace(nodes, currentId, current, { entries = [], chang
         if (!ancestor) throw Error("父文件不存在");
         parent = ancestor.parent;
       }
-      update.parent = parent_id;
+      update.parent = destination;
     }
     const pathChanged = update.title !== undefined || update.parent !== undefined;
-    if (pathChanged && !(update.parent ?? n.parent))
-      relativeNames(update.title ?? n.title);
     if (
       pathChanged &&
       all.some(

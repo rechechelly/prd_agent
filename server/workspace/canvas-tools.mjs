@@ -8,10 +8,7 @@ export function drawCanvasTool(workspace) {
     name: "draw_online_canvas",
     description: toolDescriptions.draw_online_canvas,
     parameters: obj({
-      id: opt(str({ description: "目标画布文件 ID，与 path 二选一" })),
-      path: opt(
-        str({ description: "目标画布的工作区路径，相对路径以在线工作区根目录为起点" }),
-      ),
+      id: str({ pattern: "\\S", description: "目标画布的在线文件 ID" }),
       elements: opt(
         arr(
           obj({
@@ -52,10 +49,10 @@ export function drawCanvasTool(workspace) {
       ),
     }),
     execute(draft, args) {
-      const doc = draft.target(args.id, args.path);
+      const doc = draft.target(args.id);
       if (!boardType(doc.type))
         throw Error(
-          "目标不是画布。用 list_online_files 找到目标画布，或用 write_online_file 创建 canvas，再传入其 id 或 path。",
+          "目标不是画布。用 list_online_files 找到目标画布，或用 write_online_file 创建 canvas，再传入其 id。",
         );
       const scene = doc.scene || [];
       let patch;

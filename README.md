@@ -88,12 +88,12 @@ npm start
 
 | 操作对象 | 工具 | 标识和用途 |
 | --- | --- | --- |
-| 在线工作区 | `list_online_files`、`read_online_file`、`write_online_file`、`edit_online_file` | 使用在线文件 ID 或相对整个工作区根目录的路径，例如 `需求/原型`。从 A 开启会话也可以读写 B。读取和修改省略目标时定位 A；在 A 下创建子文件时指定 `parent_id` 为 A 的 ID。 |
-| 在线画布和 PRD | `draw_online_canvas`、`embed_view_screenshots` | 按在线文件定位画布，或把配套 HTML 截图嵌入指定文档。 |
+| 在线工作区 | `list_online_files`、`read_online_file`、`write_online_file`、`edit_online_file` | 列目录和创建文件时显式传 `parent_id`，根节点用 `null`。读取和修改时必传目标 `id`。每次提问都会带上本轮当前文件 ID，也可以使用引用或目录中的其他 ID。 |
+| 在线画布和 PRD | `draw_online_canvas`、`embed_view_screenshots` | 绘图传画布 `id`。嵌入截图时同时传 PRD 的 `document_id` 和配套原型的 `html_id`。 |
 | 本次任务的文件系统 | Pi 的 `read`、`write`、`edit`、`bash` | 使用任务目录路径。用 `read` 读取附件解析文本、图片及激活技能的资料，用 `write` 和 `edit` 编写技能与脚本，用 Bash 运行脚本或解析二进制原件。 |
 | 工作台技能与会话 | `skill_load`、`compact_context` | 前者按名称加载技能入口。后者是工作台为模型提供的操作，调用 Pi 的 `Conversation.compact`。Pi 自带的阈值压缩和上下文溢出恢复也会自动运行。 |
 
-工作区使用数据库保存文件树。比如 `read_online_file({path:"需求/说明"})` 读取在线文档，`read({path:"upload-….txt"})` 读取本次任务的附件。
+工作区使用数据库保存文件树。要找「需求/说明」，用 `list_online_files({parent_id:null})` 查树，按 `display_path` 辨认目标，再用返回的 ID 调用 `read_online_file({id})`。在「需求」下另建文档时，用该目录的 ID 调用 `write_online_file({parent_id:folderId,title:"验收",type:"document",content:"<p>正文</p>"})`。要先新建父目录时，创建后取其返回 ID 作为下一次调用的 `parent_id`。Pi 的 `read({path:"upload-….txt"})` 则按任务目录路径读取附件。
 
 同一文件有多处要改时，`edit_online_file` 可以一次提交以下参数。每个 `old_text` 都在调用开始时的同一份原文中定位。任一项找不到、匹配多次或与另一项重叠，整批都不会写入。
 
@@ -109,18 +109,20 @@ npm start
 }
 ```
 
-单处替换使用 `{id, old_text, content}`，追加到文档末尾使用 `{id, append:true, content}`。整篇重写现有文档或 HTML 时，先用 `read_online_file` 读取目标。每页返回同一份完整正文的 SHA-256 值 `content_version`。调用 `edit_online_file({id, replace_all:true, base_version:content_version, content})` 时，工具先核对当前正文版本。版本不匹配会中止修改，重读目标后可基于新版本再提交。划词编辑沿用选区专用的 `{content}`，光标补全沿用编辑器快照。
+单处替换使用 `{id, old_text, content}`，追加到文档末尾使用 `{id, append:true, content}`。整篇重写现有文档或 HTML 时，先用 `read_online_file` 读取目标。每页返回同一份完整正文的 SHA-256 值 `content_version`。调用 `edit_online_file({id, replace_all:true, base_version:content_version, content})` 时，工具先核对当前正文版本。版本不匹配会中止修改，重读目标后可基于新版本再提交。划词编辑由宿主绑定文件 ID 和选区，模型只传 `{content}`。文档和代码补全由编辑器绑定文件 ID、快照和光标，模型只返回 `{list}`。
 
 Pi Durable 1.6.0 的原生文件工具也有同文件批量编辑接口 `edit({path, edits:[{oldText,newText}]})`，其原生 `read`、`write` 每次接收一个路径。
 
 | 工具 | 一次调用可以完成的操作 |
 | --- | --- |
-| `read_online_file` | 用 `list` 读取多个文件或同一文件的多个区段。各项可指定 `offset`、`limit`，用返回的 `next_offset` 续读 |
-| `write_online_file` | 用 `list` 创建多份文件，每项提供 `path`、`type` 和可选正文。返回顺序与输入一致 |
-| `draw_online_canvas` | 用 `elements` 和 `remove` 一次提交同一画布的节点、连线和删除。涉及多个画布时，按目标组成 `list` |
+| `read_online_file` | 用 `list` 读取多个文件或同一文件的多个区段。每项带目标 `id` 和可选的 `offset`、`limit`，用返回的 `next_offset` 续读 |
+| `write_online_file` | 用 `list` 创建多份文件，每项提供 `parent_id`、单个文件名 `title`、`type` 和可选正文 `content`。返回顺序与输入一致 |
+| `draw_online_canvas` | 用 `elements` 和 `remove` 一次提交同一画布的节点、连线和删除。涉及多个画布时使用 `list`，每项带画布 `id` |
 | `embed_view_screenshots` | 每对文档与原型一次处理全部截图标记。多组文件使用 `list:[{document_id,html_id},…]` |
 
 从 v1.0.x 升级到 v2.0.0 时，如果自定义技能使用旧工具名，请将 `read_file`、`write_file`、`edit_file`、`list_file`、`draw_canvas` 分别改为 `read_online_file`、`write_online_file`、`edit_online_file`、`list_online_files`、`draw_online_canvas`。已有会话的执行记录保留当时的工具名。
+
+自定义技能里沿用在线 `path` 参数或省略目标的示例需要按上表更新。文件树中的路径用于展示，在线工具用 ID 区分同名、改名或移动过的文件。
 
 新增工作台工具时，在 `shared/agent-catalog.mjs` 声明分组，在 `server/agent/tools.mjs` 注册。在线文件工具由 `server/workspace/` 实现。四个系统工具的名称、参数和描述由锁定版本的 `@earendil-works/pi-durable/tools` 提供。
 

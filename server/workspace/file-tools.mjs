@@ -1,27 +1,21 @@
-import { arr, obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
+import { arr, nullable, obj, oneOf, opt, str, int, bool } from "@earendil-works/pi-schema";
 import { onlineFileTypes } from "../../shared/workspace-files.mjs";
 import { toolDescriptions } from "../../shared/agent-catalog.mjs";
-import { defineTextTool } from "../agent/text-tool.mjs";
-import { onlineBatchTool } from "./batch-tool.mjs";
+import { defineOnlineTool, onlineBatchTool } from "./batch-tool.mjs";
 
-const selector = {
-  id: opt(str({ description: "在线文件 ID，与 path 二选一" })),
-  path: opt(str({ description: "相对于在线工作区根目录的文件树路径，例如 需求/原型" })),
-};
+const id = str({ pattern: "\\S", description: "在线文件 ID，单项必填" });
+const parentId = nullable(str({ pattern: "\\S" }), { description: "父节点 ID；根目录传 null" });
 
 export function onlineFileTools(workspace) {
   return [
     onlineBatchTool(workspace, {
       name: "write_online_file",
       description: toolDescriptions.write_online_file,
+      addressHint: "请传 parent_id、title 和 type。根目录传 parent_id:null，title 只填单个名称。",
       parameters: obj({
-        path: str(),
+        parent_id: parentId,
+        title: str({ minLength: 1 }),
         type: oneOf(Object.keys(onlineFileTypes)),
-        parent_id: opt(
-          str({
-            description: "在线父文件 ID；省略时从工作区根目录创建",
-          }),
-        ),
         content: opt(
           str({
             description:
@@ -35,17 +29,18 @@ export function onlineFileTools(workspace) {
       name: "read_online_file",
       readOnly: true,
       description: toolDescriptions.read_online_file,
-      parameters: obj({ ...selector, version: opt(int()), file: opt(oneOf(["prd", "html"])), offset: opt(int()), limit: opt(int()) }),
+      parameters: obj({ id, version: opt(int()), file: opt(oneOf(["prd", "html"])), offset: opt(int()), limit: opt(int()) }),
       maxResultBytes: 256 * 1024,
       execute: (target, args, count) => target.read(args, Math.floor(40000 / count)),
     }),
-    defineTextTool({
+    defineOnlineTool({
       name: "edit_online_file",
       description: toolDescriptions.edit_online_file,
+      addressHint: "请传目标文件 id；移动时 parent_id 为父节点 ID，移到根目录用 null。",
       parameters: obj({
-        ...selector,
+        id,
         title: opt(str()),
-        parent_id: opt(str()),
+        parent_id: opt(parentId),
         content: opt(str({ description: "单处替换或追加的内容。整篇替换另传 replace_all:true 和 base_version。" })),
         replace_all: opt(bool({ description: "整篇替换时显式设为 true。" })),
         base_version: opt(str({ description: "整篇替换目标在 read_online_file 最近读取结果中的 content_version。" })),
@@ -55,11 +50,12 @@ export function onlineFileTools(workspace) {
       }),
       execute: workspace.edit,
     }),
-    defineTextTool({
+    defineOnlineTool({
       name: "list_online_files",
       replay: "safe",
       description: toolDescriptions.list_online_files,
-      parameters: obj({ ...selector, offset: opt(int()), limit: opt(int()) }),
+      addressHint: "请传 parent_id；列根目录用 {parent_id:null}，列某个节点的后代时传该节点 ID。",
+      parameters: obj({ parent_id: parentId, offset: opt(int()), limit: opt(int()) }),
       execute: workspace.list,
     }),
   ];

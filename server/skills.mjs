@@ -130,7 +130,7 @@ export function skillRuntime(catalog, prior = []) {
       .map(([old, current]) => old + " → " + current);
     const toolNote = renames.length
       ? "本技能使用旧版在线工具名，请按本轮工具清单调用：" + renames.join("，") +
-        "。路径相对于在线工作区根目录，创建子文件传 parent_id。在线正文通过 content 写入。\n"
+        "。读取、修改和绘图传 id，列目录传 parent_id，创建传 parent_id、title 和 type，根节点的 parent_id 为 null。\n"
       : "";
     return (
       '<skill name="' +

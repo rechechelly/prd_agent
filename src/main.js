@@ -11,7 +11,7 @@ import { installSourceEditor } from "./workspace/source-editor";
 import { emptyHtml, sourceEdits } from "./workspace/html-source";
 import { createDocumentEditor } from "./editor/document-editor";
 import { sceneVersion } from "../shared/canvas-model.mjs";
-import { targetsFile } from "../shared/chat-sessions.mjs";
+import { relatedFiles, targetsFile } from "../shared/chat-sessions.mjs";
 import { editableTab, historyPopover, installContextWindow } from "./chat/session-controls";
 import { configureNavigation, addressKey, visitFile, loadFile } from "./workspace/navigation";
 import { chats, sessions, newSession, latestSession, chooseSession, selectedSession, sessionName } from "./chat/chat-sessions";
@@ -731,7 +731,7 @@ function completionStatus(message = "", error) {
   const button = $("completionToggle");
   button.textContent = message || (completionEnabled ? "AI 补全 · 开" : "AI 补全 · 关");
   button.setAttribute("aria-pressed", String(completionEnabled));
-  button.title = error || "输入后自动补全 · 单按 Tab 采纳，双按 Tab 生成或换一版，Esc 取消";
+  button.title = error || "补全当前文件的光标后文 · 单按 Tab 采纳，双按 Tab 生成或换一版，Esc 取消";
 }
 function mountCompletionControls(mount, visible) {
   for (const id of ["completionToggle", "completionModel"]) {
@@ -814,6 +814,16 @@ function editQuestion(box, session, message) {
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
 }
+async function resendMessage(session, message, question, editIndex, resume) {
+  const target = directory().entries.get(message.fileId || session.sourceId)?.item;
+  if (!target) return toast("请求的原文件已删除");
+  if (target !== doc) {
+    if (await openDoc(target) === false || target !== doc) return;
+    selectChat(target, session);
+  }
+  if (selectedSession(target) === session)
+    return ask(question, editIndex, message.refsUsed || [], resume);
+}
 function mountQuestionEditor(box, session, message) {
   const index = session.messages.indexOf(message),
     later = session.messages.length - index - 1;
@@ -845,7 +855,7 @@ function mountQuestionEditor(box, session, message) {
     e.preventDefault();
     if (!input.value.trim()) return;
     edits.delete(session);
-    ask(input.value, index, message.refsUsed || []);
+    resendMessage(session, message, input.value, index);
   };
   form.append(input, note, cancel, send);
   box.replaceChildren(form);
@@ -963,6 +973,7 @@ function chat(focusIndex) {
       continue;
     failures.push({
       ...t,
+      targetUnknown: !t.fileId && relatedFiles(session).length > 1,
       failure:
         t.reason === "turn_limit"
           ? "工具执行达到轮次上限，本次未收到最终回复。"
@@ -1107,14 +1118,7 @@ function chat(focusIndex) {
           resume.type = "button";
           resume.className = "requestControl";
           resume.textContent = m.control === "ready" ? "取回结果" : "继续";
-          resume.onclick = async () => {
-            const target = directory().entries.get(m.fileId || session.sourceId)?.item;
-            if (!target) return toast("请求的原文件已删除");
-            await openDoc(target);
-            if (target !== doc) return;
-            selectChat(target, session);
-            ask(m.q, m.editIndex, m.refsUsed || [], m);
-          };
+          resume.onclick = () => resendMessage(session, m, m.q, m.editIndex, m);
           question.append(resume);
         }
         area.append(block);
@@ -1127,8 +1131,9 @@ function chat(focusIndex) {
         notice.textContent = m.failure;
         retry.type = "button";
         retry.textContent = "重新发送";
-        retry.disabled = !!pending;
-        retry.onclick = () => ask(m.q, undefined, m.refsUsed || []);
+        retry.disabled = !!pending || m.targetUnknown;
+        if (m.targetUnknown) retry.title = "历史记录缺少目标文件，请在目标文件中重新提问";
+        retry.onclick = () => resendMessage(session, m, m.q);
         block.append(notice, retry);
         area.append(block);
         continue;
@@ -1249,7 +1254,7 @@ function drainQueue(file, session) {
   if (sending.has(session) || state.loading || state.promoting || state.stopped ||
       !state.items.length || (!docs.includes(file) && !folders.includes(file))) return;
   const item = state.items[0];
-  const target = directory().entries.get(item.doc || file.id)?.item;
+  const target = directory().entries.get(item.doc || session.sourceId)?.item;
   if (!target) { state.stopped = true; return; }
   if (target.deferred) { loadFile(target).then(() => drainQueue(target, session)).catch(e => toast(e.message)); return; }
   if (hasProposal(target, session)) return;
@@ -1259,6 +1264,8 @@ async function ask(q, editIndex, editRefs, resume) {
   if (!doc || !q.trim()) return;
   const file = doc, session = selectedSession(file);
   if (pendingUploads.get(session)) return toast("附件解析完成后即可发送");
+  if ((editRefs ?? quoted).some(ref => ref.kind === "range" && ref.id !== file.id))
+    return toast("选区属于其他文件，请回原文件提问或移除选区");
   session.lastAskedAt = Date.now();
   if (!online || editIndex !== undefined || resume) {
     if (sending.has(session)) return;
@@ -1279,7 +1286,7 @@ async function ask(q, editIndex, editRefs, resume) {
     await syncQueue(file, session, "add", item);
   } catch (error) {
     // Keep a rejected submission accessible even if another draft was typed.
-    (session.failedAttempts ||= []).push({ q, refsUsed: refs, createdAt: Date.now(), requestId: item.requestId, failure: error.message });
+    (session.failedAttempts ||= []).push({ fileId: file.id, q, refsUsed: refs, createdAt: Date.now(), requestId: item.requestId, failure: error.message });
     changed();
     toast(error.message);
   }
@@ -1298,7 +1305,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
     ?.turns.findLast((t) => t.control === "paused");
   if (pausedTurn && !resume && editIndex !== undefined)
     return toast("当前请求已暂停，可以继续或发送一条新消息");
-  if (pausedTurn) editIndex = pausedTurn.editIndex;
+  if (pausedTurn && targetsFile(pausedTurn, session, owner)) editIndex = pausedTurn.editIndex;
   const prefix = session.messages.slice(
     0,
     editIndex ?? session.messages.length,
@@ -1352,7 +1359,7 @@ async function runQuestion(owner, session, q, editIndex, editRefs, resume, queue
       await transcripts.get(session)?.promise;
       const bookmark = transcripts.get(session)?.turns.findLast(t => t.control === "paused");
       pending.resumeFrom = bookmark?.requestId;
-      if (bookmark) editIndex = pending.editIndex = bookmark.editIndex;
+      if (bookmark && targetsFile(bookmark, session, owner)) editIndex = pending.editIndex = bookmark.editIndex;
       changed();
       await flush();
       renderQuotes();

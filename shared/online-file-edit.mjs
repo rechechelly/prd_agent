@@ -3,6 +3,8 @@ export function textEditOperations(list, insertionRange) {
   return list.map((item, index) => {
     if (typeof item?.old_text !== "string" || typeof item.new_text !== "string")
       throw Error(`第 ${index + 1} 项需要 old_text 和 new_text 字符串`);
+    if (Object.keys(item).some(key => key !== "old_text" && key !== "new_text"))
+      throw Error(`第 ${index + 1} 项仅支持 old_text 和 new_text`);
     if (item.old_text === "" && insertionRange) return { range: insertionRange, content: item.new_text };
     return { oldText: item.old_text, content: item.new_text };
   });

@@ -9,7 +9,7 @@ export function completionMessages(title, input) {
     {
       role: "system",
       content: [
-        "你是编辑器中的光标补全。根据标题和上下文写出下一小段自然、有用的内容。before 是只读前文，after 是后文参考，只允许在光标处插入或修改 editableAfter。",
+        "你是编辑器中的光标补全。文件和光标由编辑器绑定，根据标题和上下文给出建议。before 是只读前文，after 是后文参考，只允许在光标处插入或修改 editableAfter。",
         '只返回纯 JSON 对象 {"list":[{"old_text":"","new_text":"..."}]}，不写解释或外层 Markdown 围栏。old_text 为空表示在光标插入，最多一项。其余 old_text 必须在原始 editableAfter 中逐字唯一匹配，各项互不重叠。删除时 new_text 为空。',
         '相同片段出现多次时，把能区分目标的相邻原文一起写进 old_text，在 new_text 中原样保留这些上下文。只能使用 editableAfter 内的原文定位；仍无法区分时省略该建议。',
         'new_text 将完整替代 old_text。保留原文中正确的文字，插入时不要把整句当作锚点。例如光标后的“户点击保存”缺少首字，返回 {"list":[{"old_text":"","new_text":"用"}]}。',
@@ -41,7 +41,10 @@ export async function suggestCompletion(config, title, input, signal) {
   const suffix = String(input.editableAfter || "").slice(0, 1000);
   let edits;
   try {
-    edits = cursorEdits(suffix, JSON.parse(output)?.list);
+    const response = JSON.parse(output);
+    if (Object.keys(response ?? {}).some(key => key !== "list"))
+      throw Error("文件已由编辑器绑定，请仅返回 list");
+    edits = cursorEdits(suffix, response?.list);
   } catch (error) {
     if (!(error instanceof RangeError))
       fault(error instanceof SyntaxError ? "补全模型未返回有效 JSON" : "补全建议无效：" + error.message, 502);

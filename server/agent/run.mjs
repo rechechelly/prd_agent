@@ -96,8 +96,10 @@ export async function runAgent(
     const folder = path.join(directory, "agent");
     await fs.mkdir(folder, { recursive: true });
     const record = (await workspaceSnapshot(identity))?.current;
-    if (record?.status === "completed" && record.requestId === requestId)
+    if (record?.status === "completed" && record.requestId === requestId) {
+      if ((record.fileId || session.sourceId) !== ownerId) fault("取回请求结果时需要使用原文件", 409);
       return (await workspaceSnapshot(identity, WorkspaceAnswer)).result;
+    }
     const bookmark = record?.status === "submitted" ? record : pausedRequest(identity);
     const recovering = bookmark?.status === "submitted" && requestId === bookmark.requestId;
     if (typeof p === "function") p = p(recovering ? bookmark.modelId : req.modelId);
@@ -254,7 +256,7 @@ export async function runAgent(
           return toolReply("刚检查过压缩，请先继续当前任务。", true);
         lastCompactRound = rounds.size;
         compactRequest =
-          focus || "保留用户要求、已完成操作、目标文件和剩余工作";
+          focus || "保留用户要求、已完成操作、目标文件 ID 和剩余工作";
         return toolReply("已请求检查可压缩历史，将在下一次推理前处理。");
       },
     });
@@ -264,7 +266,6 @@ export async function runAgent(
       scope,
       skillSet,
       mountSkills,
-      files,
       inputs,
       network,
       compactTool,
@@ -345,7 +346,7 @@ export async function runAgent(
               correctionCount++;
               progress?.({ label: "正在核对工具结果并修正" });
               return {
-                continue: scope ? "查看工具结果。答疑直接回答，修改使用 edit_online_file 的 content 替换指定选区；请保留选区内标签。" : correctToolResult,
+                continue: scope ? "核对工具结果。答疑直接回答，修改用 edit_online_file({content}) 替换宿主绑定的选区，保留选区内标签。" : correctToolResult,
               };
             }
           },
@@ -400,7 +401,6 @@ export async function runAgent(
       canvas,
       doc,
       docs,
-      ownerId,
       html: files["current.html"],
       req,
       references,
@@ -660,7 +660,7 @@ export async function runAgent(
     }
     if (hasFiles() && toolCalls.at(-1)?.status === "failed")
       fault(
-        "最后一次文件操作未成功，未提交这一批改动。请核对请求中的路径或文件名。",
+        "最后一次文件操作未成功，未提交这一批改动。请查看执行记录中的工具错误。",
         409,
       );
     if (settled.status !== "done") {
